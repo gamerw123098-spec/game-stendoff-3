@@ -366,6 +366,11 @@ function onWelcome(msg) {
     });
   }
   buildSlots();
+  // Код виден весь матч, чтобы позвать друга можно было в любой момент.
+  const roomCode = document.createElement('div');
+  roomCode.id = 'room-code';
+  roomCode.textContent = `Код игры: ${config.code}`;
+  $('hud').append(roomCode);
   buildHostSettings();
   applyModeUi();
   $('join-panel').hidden = true;

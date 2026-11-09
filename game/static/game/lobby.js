@@ -26,8 +26,23 @@ try {
 
 // ---------- Вход по коду ----------
 const codeInput = $('join-code');
+codeInput.autocapitalize = 'characters';
+codeInput.spellcheck = false;
+// Код латинский, а раскладка у игрока часто русская. На обычной клавиатуре берём букву
+// по положению клавиши, на экранной клавиатуре телефона заменяем похожие русские буквы.
+const LOOKALIKE = { А: 'A', В: 'B', Е: 'E', К: 'K', М: 'M', Н: 'H', Р: 'P', С: 'C', Т: 'T', У: 'Y', Х: 'X' };
+codeInput.addEventListener('keydown', (event) => {
+  const letter = /^Key([A-Z])$/.exec(event.code)?.[1];
+  if (!letter || event.ctrlKey || event.metaKey || event.altKey || !/[а-яё]/i.test(event.key)) return;
+  event.preventDefault();
+  codeInput.setRangeText(letter, codeInput.selectionStart, codeInput.selectionEnd, 'end');
+  codeInput.dispatchEvent(new Event('input'));
+});
 codeInput.addEventListener('input', () => {
-  codeInput.value = codeInput.value.replace(/[^a-z]/gi, '').toUpperCase();
+  codeInput.value = codeInput.value.toUpperCase()
+    .replace(/[А-ЯЁ]/g, (char) => LOOKALIKE[char] ?? '')
+    .replace(/[^A-Z]/g, '')
+    .slice(0, 4);
 });
 
 $('join-form').addEventListener('submit', (event) => {
