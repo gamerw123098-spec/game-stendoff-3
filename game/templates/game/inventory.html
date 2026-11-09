@@ -1,0 +1,75 @@
+{% load static %}<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Инвентарь · ПОЛИГОН</title>
+  <link rel="icon" href="{% static 'game/icon.svg' %}" type="image/svg+xml">
+  <link rel="stylesheet" href="{% static 'game/site.css' %}">
+  <link rel="stylesheet" href="{% static 'game/inventory.css' %}">
+  <script type="importmap">{"imports": {"three": "{% static 'game/vendor/three.module.min.js' %}"}}</script>
+</head>
+<body class="lobby">
+  <main class="lobby-wrap">
+    <a class="back" href="{% url 'lobby' %}">Назад к комнатам</a>
+    <h1 class="inv-title">Инвентарь</h1>
+
+    <section class="case-panel">
+      <div class="case-art" aria-hidden="true"><span>ДЕПО</span></div>
+      <div class="case-info">
+        <h2>Кейс «Депо»</h2>
+        <p class="sub-line">Кейс дают за победу в матче. Первый в подарок.</p>
+        <p class="case-count">Кейсов: <b id="case-count">0</b></p>
+        <button class="primary" id="open-case" type="button" disabled>Открыть кейс</button>
+        <p id="inv-error" class="error" role="alert" hidden></p>
+      </div>
+      <div class="odds">
+        <h3>Шансы</h3>
+        <ul id="odds"></ul>
+      </div>
+    </section>
+
+    <h2 class="section-title">Мои скины</h2>
+    <p id="empty-note" class="sub-line">Пока пусто. Откройте кейс или победите в матче.</p>
+    <div id="my-items" class="skin-grid"></div>
+
+    <h2 class="section-title">Что может выпасть</h2>
+    <div id="all-items" class="skin-grid"></div>
+
+    <section class="profile-panel">
+      <h2>Код профиля</h2>
+      <p class="sub-line">С этим кодом кейсы и скины можно забрать на другом компьютере. Не показывайте его никому: кто знает код, тот управляет профилем.</p>
+      <div class="code-row">
+        <output id="profile-code">…</output>
+      </div>
+      <form id="restore-form" class="restore">
+        <label class="field"><span>Уже есть код? Введите его здесь</span>
+          <input id="restore-code" maxlength="10" autocomplete="off" required>
+        </label>
+        <button type="submit">Войти по коду</button>
+      </form>
+    </section>
+  </main>
+
+  <div id="roulette" class="roulette" hidden>
+    <div class="roulette-box" role="dialog" aria-label="Открытие кейса">
+      <div class="window">
+        <div class="pointer" aria-hidden="true"></div>
+        <div id="track" class="track"></div>
+      </div>
+      <div id="result" class="result" hidden>
+        <img id="result-image" alt="">
+        <small id="result-rarity"></small>
+        <h2 id="result-name"></h2>
+        <div class="result-actions">
+          <button class="primary" id="result-equip" type="button">Надеть</button>
+          <button id="result-close" type="button">Закрыть</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {{ catalog|json_script:"catalog" }}
+  <script type="module" src="{% static 'game/inventory.js' %}"></script>
+</body>
+</html>

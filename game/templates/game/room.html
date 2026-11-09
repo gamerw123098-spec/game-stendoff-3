@@ -1,0 +1,277 @@
+{% load static %}<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>ПОЛИГОН · {{ code }}</title>
+  <link rel="icon" href="{% static 'game/icon.svg' %}" type="image/svg+xml">
+  <link rel="stylesheet" href="{% static 'game/site.css' %}">
+  <link rel="stylesheet" href="{% static 'game/game.css' %}">
+  <link rel="stylesheet" href="{% static 'game/device.css' %}">
+  <script type="importmap">{"imports": {"three": "{% static 'game/vendor/three.module.min.js' %}"}}</script>
+</head>
+<body class="game">
+  <div id="stage"></div>
+
+  <div id="hud" hidden>
+    <div id="vignette" aria-hidden="true"></div>
+    <div id="scope" hidden></div>
+    <div id="crosshair" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+    <div id="hitmarker" aria-hidden="true"></div>
+    <div id="damage" aria-hidden="true"></div>
+    <div id="damage-arcs" aria-hidden="true"></div>
+    <div id="smoke-veil" aria-hidden="true" hidden></div>
+    <div id="flashbang" aria-hidden="true"></div>
+    <canvas id="radar" aria-hidden="true"></canvas>
+    <div id="map-note"></div>
+    <div id="objective" hidden></div>
+    <div id="act-bar" hidden><span id="act-text"></span><div class="bar"><i id="act-fill"></i></div></div>
+    <div id="kill-note" hidden><b id="kill-text"></b><span id="kill-sub"></span></div>
+    <div id="hints" hidden></div>
+    <div id="perf-tip" hidden>Игра идёт медленно (<b id="perf-fps"></b> кадров/с). Нажмите <kbd>L</kbd>, чтобы включить быструю графику</div>
+    <div id="cursor-tip" hidden>Курсор свободен. Нажмите <kbd>P</kbd> или щёлкните по игре, чтобы вернуться</div>
+
+    <div id="top">
+      <div class="score t"><small id="team-a-name">Террористы</small><b id="score-a">0</b></div>
+      <div class="clock"><b id="timer">0:00</b><small id="goal"></small></div>
+      <div class="score ct"><small id="team-b-name">Антитеррористы</small><b id="score-b">0</b></div>
+    </div>
+
+    <ol id="feed" aria-live="off"></ol>
+
+    <div id="banner" hidden><b id="banner-title"></b><span id="banner-sub"></span></div>
+    <div id="dead-note" hidden></div>
+
+    <div id="buy-note" hidden></div>
+
+    <div id="status">
+      <div id="team-badge"></div>
+      <div class="wallet" id="wallet"><b id="money">$0</b><span id="money-gain"></span></div>
+      <div class="hp"><small>Здоровье <span id="armor"></span></small><b id="hp">100</b><div class="bar"><i id="hp-bar"></i></div></div>
+    </div>
+    <div id="gun">
+      <small id="weapon-name"></small>
+      <div class="ammo"><b id="ammo">30</b><span id="mag">/ 30</span></div>
+      <div id="reload-note" hidden>Перезарядка…</div>
+      <div id="nades"></div>
+      <ol id="slots"></ol>
+    </div>
+
+    <div id="netinfo"></div>
+    <div id="rotate-tip">Поверните телефон горизонтально</div>
+
+    <section id="shop" aria-label="Магазин" hidden>
+      <header>
+        <h2>Магазин</h2>
+        <b id="shop-money" class="shop-money">$0</b>
+        <span class="shop-time">Закроется через <b id="shop-timer">20 с</b></span>
+        <button id="shop-close" class="primary" type="button">В бой (B)</button>
+      </header>
+      <div id="shop-cols"></div>
+    </section>
+
+    <div id="board" hidden>
+      <h2>Счёт</h2>
+      <div class="board-cols">
+        <div><h3 class="t" id="board-a"></h3><table><thead><tr><th>Игрок</th><th title="Убийства">У</th><th title="Смерти">С</th></tr></thead><tbody id="tbody-a"></tbody></table></div>
+        <div><h3 class="ct" id="board-b"></h3><table><thead><tr><th>Игрок</th><th title="Убийства">У</th><th title="Смерти">С</th></tr></thead><tbody id="tbody-b"></tbody></table></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="overlay">
+    <section id="join-panel" class="panel">
+      <p class="code-label">Код игры</p>
+      <h1 class="join-code">{{ code }}</h1>
+      <p class="sub">{{ mode_name }} · карта «{{ map_name }}»</p>
+      <form id="join-form">
+        <label class="field">
+          <span>Ваш ник</span>
+          <input id="nick" maxlength="16" autocomplete="off" placeholder="Например, Аня" autofocus>
+        </label>
+        <button class="primary" type="submit" id="join-btn">Войти в игру</button>
+        <p id="join-error" class="error" role="alert" hidden></p>
+      </form>
+      <a class="back" href="{% url 'lobby' %}">На главную</a>
+    </section>
+
+    <section id="waiting-panel" class="panel wide" hidden>
+      <div class="wait-top">
+        <div class="code-box"><small>Код игры</small><b>{{ code }}</b></div>
+        <div class="wait-howto">
+          <b>Как позвать друзей</b>
+          <ol>
+            <li>Откройте сайт <span class="addr" data-addr></span></li>
+            <li>Введите код <b>{{ code }}</b> и свой ник</li>
+          </ol>
+        </div>
+      </div>
+
+      <div class="wait-cols">
+        <div>
+          <h2>Игроки · <span id="wait-count"></span></h2>
+          <div id="wait-teams" class="wait-teams"></div>
+          <div class="btn-row" id="wait-team-buttons">
+            <button class="t-btn" data-wait-team="0" type="button">Играть за террористов</button>
+            <button class="ct-btn" data-wait-team="1" type="button">Играть за антитеррористов</button>
+          </div>
+        </div>
+
+        <div>
+          <div id="host-settings" hidden>
+            <h2>Вы ведущий: настройте игру</h2>
+            <label class="field"><span>Режим</span><select id="set-mode"></select></label>
+            <label class="field"><span>Карта</span><select id="set-map"></select></label>
+            <label class="field" id="set-target-field"><span id="set-target-label">Играем до</span>
+              <input type="number" id="set-target"></label>
+            <div class="btn-row">
+              <button id="set-bot-add" type="button">+ Бот</button>
+              <button id="set-bot-remove" type="button">− Бот</button>
+            </div>
+            <p id="start-hint" class="hint"></p>
+            <button class="primary start" id="set-start" type="button">Начать игру</button>
+          </div>
+          <div id="guest-settings">
+            <h2>Игра</h2>
+            <p id="guest-summary" class="summary"></p>
+            <p id="guest-wait" class="waiting-dots"></p>
+          </div>
+          <h2>Правила режима</h2>
+          <p id="mode-rules" class="rules"></p>
+          <details class="controls pc-only">
+            <summary>Управление</summary>
+            <dl class="keys">
+              <dt>W A S D</dt><dd>Движение</dd>
+              <dt>Мышь, ЛКМ</dt><dd>Прицел и выстрел</dd>
+              <dt>ПКМ</dt><dd>Прицелиться</dd>
+              <dt>Пробел / Shift</dt><dd>Прыжок / присесть</dd>
+              <dt>R</dt><dd>Перезарядка</dd>
+              <dt>B</dt><dd>Магазин (20 секунд после появления)</dd>
+              <dt>G F C</dt><dd>Гранаты: осколочная, вспышка, дым</dd>
+              <dt>E</dt><dd>Удерживать у бомбы</dd>
+              <dt>5</dt><dd>Достать бомбу (у террориста)</dd>
+              <dt>T</dt><dd>Нарисовать спрей</dd>
+              <dt>1 2 3, Q</dt><dd>Смена оружия</dd>
+              <dt>Tab</dt><dd>Счёт</dd>
+            </dl>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section id="results-panel" class="panel wide" hidden>
+      <h1 id="res-title"></h1>
+      <p class="sub" id="res-sub"></p>
+      <p id="res-case" class="case-note" hidden>+1 кейс за победу! Откройте его в <a href="{% url 'lobby' %}#cases" target="_blank" rel="noopener">главном меню</a></p>
+      <div id="res-podium" class="podium"></div>
+      <div id="res-mine" class="res-mine"></div>
+      <div class="res-table-wrap">
+        <table class="res-table">
+          <thead>
+            <tr>
+              <th>#</th><th>Игрок</th><th>Убийства</th><th>Смерти</th><th>Помощь</th>
+              <th>В голову</th><th>Меткость</th><th>Урон</th><th id="res-obj-head">Бомба</th><th>Очки</th>
+            </tr>
+          </thead>
+          <tbody id="res-body"></tbody>
+        </table>
+      </div>
+      <div class="res-actions">
+        <div id="res-host">
+          <button class="primary" id="res-again" type="button">Играть ещё раз</button>
+          <button id="res-lobby" type="button">Сменить режим или карту</button>
+        </div>
+        <p id="res-wait" class="waiting-dots"></p>
+      </div>
+    </section>
+
+    <section id="menu-panel" class="panel wide" hidden>
+      <div class="menu-head">
+        <h1><span id="menu-title">Пауза</span> <span class="code">{{ code }}</span></h1>
+        <p id="lock-error" class="error" role="alert" hidden></p>
+        <button class="primary" id="resume">Продолжить</button>
+      </div>
+
+      <div class="menu-cols">
+        <div>
+          <h2>Позвать друзей</h2>
+          <p class="sub small">Сайт <span class="addr" data-addr></span>, код <b class="code">{{ code }}</b></p>
+          <div class="share">
+            <input id="share-url" readonly aria-label="Ссылка на игру">
+            <button id="share-copy" type="button">Копировать</button>
+          </div>
+
+          {% if has_teams %}
+          <h2>Команда</h2>
+          <div class="btn-row">
+            <button class="t-btn" data-team="0" type="button">Террористы</button>
+            <button class="ct-btn" data-team="1" type="button">Антитеррористы</button>
+          </div>
+          {% endif %}
+
+          <h2>Боты (меняет ведущий)</h2>
+          <div class="btn-row">
+            <button id="bot-add" type="button">Добавить</button>
+            <button id="bot-remove" type="button">Убрать</button>
+          </div>
+
+          <h2>Настройки</h2>
+          <label class="range"><span>Чувствительность мыши <output id="sens-value"></output></span>
+            <input type="range" id="sens" min="0.2" max="3" step="0.05"></label>
+          <label class="range"><span>Громкость <output id="vol-value"></output></span>
+            <input type="range" id="vol" min="0" max="1" step="0.05"></label>
+          <label class="check"><input type="checkbox" id="auto-shop"> Открывать магазин при появлении</label>
+          <label class="field"><span>Качество графики</span>
+            <select id="quality">
+              <option value="low">Низкое: просто и быстро, для слабых компьютеров</option>
+              <option value="medium">Среднее: тени, блеск металла, рельеф</option>
+              <option value="high">Высокое: ещё чётче, со сглаживанием</option>
+            </select>
+          </label>
+        </div>
+
+        <div>
+          <h2 class="pc-only">Управление</h2>
+          <dl class="keys pc-only">
+            <dt>W A S D</dt><dd>Движение</dd>
+            <dt>Мышь</dt><dd>Прицеливание</dd>
+            <dt>ЛКМ</dt><dd>Стрелять</dd>
+            <dt>ПКМ</dt><dd>Прицелиться</dd>
+            <dt>Пробел</dt><dd>Прыжок</dd>
+            <dt>Shift</dt><dd>Присесть</dd>
+            <dt>R</dt><dd>Перезарядка</dd>
+            {% if has_shop %}
+            <dt>B</dt><dd>Магазин, 20 секунд после появления</dd>
+            <dt>G F C</dt><dd>Граната: осколочная, вспышка, дым</dd>
+            {% endif %}
+            {% if is_defuse %}
+            <dt>E</dt><dd>Удерживать: заложить или обезвредить бомбу</dd>
+            <dt>5</dt><dd>Бомба в руки, ЛКМ закладывает</dd>
+            <dt>T</dt><dd>Нарисовать спрей (выбрать в главном меню)</dd>
+            {% endif %}
+            <dt>1 2 3</dt><dd>Основное, пистолет, нож</dd>
+            <dt>Q, колесо</dt><dd>Сменить оружие</dd>
+            <dt>V</dt><dd>Осмотреть оружие</dd>
+            <dt>Tab</dt><dd>Таблица счёта</dd>
+            <dt>M</dt><dd>Выключить звук</dd>
+            <dt>P</dt><dd>Отпустить курсор или вернуть его</dd>
+            <dt>Esc</dt><dd>Это меню</dd>
+          </dl>
+          <a class="primary link-button" href="{% url 'lobby' %}#cases" target="_blank" rel="noopener">Главное меню: кейсы, скины, спреи</a>
+          <a class="back" href="{% url 'lobby' %}">Выйти из игры</a>
+        </div>
+      </div>
+    </section>
+
+    <section id="lost-panel" class="panel" hidden>
+      <h1>Связь потеряна</h1>
+      <p class="sub" id="lost-reason">Сервер не отвечает. Проверьте, что он запущен и компьютеры в одной сети.</p>
+      <button class="primary" id="reconnect">Подключиться заново</button>
+      <a class="back" href="{% url 'lobby' %}">На главную</a>
+    </section>
+  </div>
+
+  {{ config|json_script:"room-config" }}
+  <script type="module" src="{% static 'game/game.js' %}"></script>
+</body>
+</html>

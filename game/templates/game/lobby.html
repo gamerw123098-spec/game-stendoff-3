@@ -1,0 +1,202 @@
+{% load static %}<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ПОЛИГОН</title>
+  <link rel="icon" href="{% static 'game/icon.svg' %}" type="image/svg+xml">
+  <link rel="stylesheet" href="{% static 'game/site.css' %}">
+  <link rel="stylesheet" href="{% static 'game/inventory.css' %}">
+  <link rel="stylesheet" href="{% static 'game/device.css' %}">
+  <script type="importmap">{"imports": {"three": "{% static 'game/vendor/three.module.min.js' %}"}}</script>
+</head>
+<body class="lobby">
+  <header class="topbar">
+    <div class="topbar-in">
+      <a class="logo" href="#play" data-tab-link="play">ПОЛИГОН</a>
+      <nav class="tabs" role="tablist" aria-label="Главное меню">
+        <a href="#play" role="tab" data-tab-link="play">Играть</a>
+        <a href="#cases" role="tab" data-tab-link="cases">Кейсы <b class="tab-badge" id="cases-badge" hidden></b></a>
+        <a href="#inventory" role="tab" data-tab-link="inventory">Инвентарь</a>
+        <a href="#sprays" role="tab" data-tab-link="sprays">Спреи</a>
+        <a href="#profile" role="tab" data-tab-link="profile">Профиль</a>
+      </nav>
+      <div class="player-chip" aria-live="polite">
+        <span class="chip-spray"><canvas id="chip-spray" width="64" height="64" aria-hidden="true"></canvas></span>
+        <span><b id="chip-nick">Игрок</b><small id="chip-cases">Кейсов: …</small></span>
+      </div>
+    </div>
+  </header>
+
+  <main class="lobby-wrap">
+    {% if missing %}
+    <p class="notice" role="alert">Игра с кодом {{ missing }} не найдена: проверьте код или попросите ведущего создать новую.</p>
+    {% endif %}
+
+    {% if full %}
+    <p class="notice" role="alert">Сейчас идёт слишком много игр. Подождите немного или войдите в чужую игру по коду.</p>
+    {% endif %}
+
+    <p id="inv-error" class="notice" role="alert" hidden></p>
+
+    <!-- ===== Играть ===== -->
+    <section class="tab-page" id="tab-play" role="tabpanel">
+      <header class="brand">
+        <h1>ПОЛИГОН</h1>
+        <p>Командный 3D-шутер прямо в браузере: террористы против антитеррористов.</p>
+      </header>
+
+      <section class="enter card">
+        <h2>Войти в игру по коду</h2>
+        <form id="join-form" class="enter-form">
+          <label class="field">
+            <span>Ваш ник</span>
+            <input id="nick" maxlength="16" autocomplete="off" placeholder="Например, Аня" required>
+          </label>
+          <label class="field">
+            <span>Код игры (спросите у ведущего)</span>
+            <input id="join-code" class="code-input" maxlength="4" autocomplete="off" placeholder="ABCD" required pattern="[A-Za-z]{4}" title="Четыре латинские буквы">
+          </label>
+          <button class="primary big" type="submit">Войти</button>
+        </form>
+        <p class="address">Друзья открывают этот же сайт: <strong>{{ base_url }}</strong></p>
+      </section>
+
+      <div class="cols">
+        <section class="card">
+          <h2>Создать игру</h2>
+          <p class="hint-line">Вы станете ведущим: получите код для друзей и начнёте матч, когда все соберутся.</p>
+          <form method="post" action="{% url 'create' %}" id="create-form">
+            {% csrf_token %}
+            <fieldset class="modes">
+              <legend>Режим (можно поменять потом)</legend>
+              {% for mode in modes %}
+              <label class="mode">
+                <input type="radio" name="mode" value="{{ mode.id }}" data-target="{{ mode.default }}" data-min="{{ mode.min }}" data-max="{{ mode.max }}" data-unit="{{ mode.unit }}"{% if forloop.first %} checked{% endif %}>
+                <span><b>{{ mode.name }}</b><small>{{ mode.text }}</small></span>
+              </label>
+              {% endfor %}
+            </fieldset>
+            <label class="field">
+              <span>Карта</span>
+              <select name="map" id="map">
+                {% for map in maps %}<option value="{{ map.id }}">{{ map.name }}. {{ map.text }}</option>{% endfor %}
+              </select>
+            </label>
+            <label class="field" id="target-field">
+              <span id="target-label">Играем до (убийств)</span>
+              <input type="number" name="target" id="target" value="30" min="5" max="100" required>
+            </label>
+            <button class="primary" type="submit">Создать игру</button>
+          </form>
+        </section>
+
+        <section class="card">
+          <h2>Открытые игры</h2>
+          <ul id="room-list" class="room-list" aria-live="polite">
+            <li class="empty">Пока никого нет. Создайте первую игру.</li>
+          </ul>
+          <a class="inv-link" href="#cases" data-tab-link="cases">
+            <span>Кейсы и скины</span>
+            <b id="inv-cases"></b>
+          </a>
+          <a class="inv-link" href="#sprays" data-tab-link="sprays">
+            <span>Выбрать спрей</span>
+            <b id="inv-spray"></b>
+          </a>
+        </section>
+      </div>
+      <footer class="req">Лучше всего игра работает в Chrome, Edge и Firefox.</footer>
+    </section>
+
+    <!-- ===== Кейсы ===== -->
+    <section class="tab-page" id="tab-cases" role="tabpanel" hidden>
+      <h1 class="inv-title">Кейсы</h1>
+      <section class="case-panel">
+        <div class="case-art" aria-hidden="true"><span>ДЕПО</span></div>
+        <div class="case-info">
+          <h2>Кейс «Депо»</h2>
+          <p class="sub-line">Кейс дают за победу в матче. Первый в подарок.</p>
+          <p class="case-count">Кейсов: <b id="case-count">0</b></p>
+          <button class="primary" id="open-case" type="button" disabled>Открыть кейс</button>
+        </div>
+        <div class="odds">
+          <h3>Шансы</h3>
+          <ul id="odds"></ul>
+        </div>
+      </section>
+      <h2 class="section-title">Что может выпасть</h2>
+      <div id="all-items" class="skin-grid"></div>
+    </section>
+
+    <!-- ===== Инвентарь ===== -->
+    <section class="tab-page" id="tab-inventory" role="tabpanel" hidden>
+      <h1 class="inv-title">Инвентарь</h1>
+      <p class="sub-line">Нажмите на скин, чтобы надеть его или снять. Надетые скины видны всем в игре.</p>
+      <p id="empty-note" class="sub-line">Пока пусто. Откройте кейс или победите в матче.</p>
+      <div id="my-items" class="skin-grid"></div>
+    </section>
+
+    <!-- ===== Спреи ===== -->
+    <section class="tab-page" id="tab-sprays" role="tabpanel" hidden>
+      <h1 class="inv-title">Спреи</h1>
+      <p class="sub-line">Выберите рисунок. В игре посмотрите на стену или землю и нажмите <kbd>T</kbd>: рисунок появится там. Рисовать можно сколько угодно, все игроки видят рисунки до смены карты.</p>
+      <div id="spray-grid" class="spray-grid"></div>
+    </section>
+
+    <!-- ===== Профиль ===== -->
+    <section class="tab-page" id="tab-profile" role="tabpanel" hidden>
+      <h1 class="inv-title">Профиль</h1>
+      <section class="profile-panel">
+        <h2>Устройство</h2>
+        <p class="sub-line">Сейчас: <b id="device-name">…</b>. От этого зависит управление в игре.</p>
+        <button id="change-device" type="button">Сменить устройство</button>
+      </section>
+      <section class="profile-panel">
+        <h2>Ник</h2>
+        <form id="nick-form" class="restore">
+          <label class="field"><span>Под этим ником вас видят в игре</span>
+            <input id="profile-nick" maxlength="16" autocomplete="off" placeholder="Например, Аня">
+          </label>
+          <button type="submit">Сохранить</button>
+        </form>
+        <p id="nick-saved" class="sub-line" hidden>Сохранено</p>
+      </section>
+      <section class="profile-panel">
+        <h2>Код профиля</h2>
+        <p class="sub-line">С этим кодом кейсы и скины можно забрать на другом компьютере. Не показывайте его никому: кто знает код, тот управляет профилем.</p>
+        <div class="code-row">
+          <output id="profile-code">…</output>
+        </div>
+        <form id="restore-form" class="restore">
+          <label class="field"><span>Уже есть код? Введите его здесь</span>
+            <input id="restore-code" maxlength="10" autocomplete="off" required>
+          </label>
+          <button type="submit">Войти по коду</button>
+        </form>
+      </section>
+    </section>
+  </main>
+
+  <div id="roulette" class="roulette" hidden>
+    <div class="roulette-box" role="dialog" aria-label="Открытие кейса">
+      <div class="window">
+        <div class="pointer" aria-hidden="true"></div>
+        <div id="track" class="track"></div>
+      </div>
+      <div id="result" class="result" hidden>
+        <img id="result-image" alt="">
+        <small id="result-rarity"></small>
+        <h2 id="result-name"></h2>
+        <div class="result-actions">
+          <button class="primary" id="result-equip" type="button">Надеть</button>
+          <button id="result-close" type="button">Закрыть</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {{ catalog|json_script:"catalog" }}
+  <script type="module" src="{% static 'game/lobby.js' %}"></script>
+</body>
+</html>

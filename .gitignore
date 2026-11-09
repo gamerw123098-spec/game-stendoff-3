@@ -1,0 +1,20 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# База с профилями, кейсами и скинами
+*.sqlite3
+*.sqlite3-journal
+
+# Секреты и журналы
+.env
+.env.*
+*.log
+
+# Редакторы и система
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

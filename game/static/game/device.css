@@ -1,0 +1,34 @@
+/* Вопрос «На чём вы играете?» */
+.device-ask {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(7, 10, 13, .9);
+}
+.device-box {
+  width: min(460px, 100%);
+  padding: 24px;
+  background: #171d24;
+  border: 1px solid rgba(255, 255, 255, .14);
+  text-align: center;
+}
+.device-box h2 { margin: 0 0 8px; font-size: 24px; }
+.device-box p { margin: 0 0 18px; color: #aeb9c4; line-height: 1.45; }
+.device-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.device-row button {
+  min-height: 64px;
+  padding: 8px 10px;
+  background: #232b34;
+  border: 1px solid rgba(255, 255, 255, .22);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.device-row button.primary { background: #f5c542; border-color: #f5c542; color: #1b1600; }
+@media (max-width: 380px) { .device-row { grid-template-columns: 1fr; } }
+
+body.touch .pc-only { display: none !important; }
