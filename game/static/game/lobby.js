@@ -1,12 +1,41 @@
 import { loadProfile } from './profile.js';
 import { SPRAYS, chooseSpray, chosenSpray, drawSpray } from './sprays.js';
 import { DEVICE_NAMES, askDevice, changeDevice } from './device.js';
+import { Sfx } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
+const loader = $('startup-screen');
+if (loader) window.setTimeout(() => loader.classList.add('done'), 420);
+const uiSfx = new Sfx(0.35);
+const soundToggles = [...document.querySelectorAll('#ui-sound-toggle, #settings-sound-toggle')];
+const uiSoundsEnabled = () => { try { return localStorage.getItem('poligon.uiSounds') === '1'; } catch { return false; } };
+function setSoundPreference(enabled, persist = true) {
+  soundToggles.forEach((toggle) => {
+    toggle.setAttribute('aria-pressed', String(enabled));
+    toggle.textContent = `ЗВУК: ${enabled ? 'ВКЛ' : 'ВЫКЛ'}`;
+  });
+  if (persist) try { localStorage.setItem('poligon.uiSounds', enabled ? '1' : '0'); } catch { /* работает до перезагрузки */ }
+}
+setSoundPreference(uiSoundsEnabled(), false);
+soundToggles.forEach((soundToggle) => soundToggle.addEventListener('click', () => {
+  const enabled = soundToggle.getAttribute('aria-pressed') !== 'true';
+  setSoundPreference(enabled);
+  if (enabled) { uiSfx.unlock(); uiSfx.click(); }
+}));
+document.addEventListener('click', (event) => {
+  if (event.target.closest('.sound-toggle')) return;
+  if (uiSoundsEnabled() && event.target.closest('button, [data-tab-link]')) {
+    uiSfx.unlock();
+    uiSfx.click();
+  }
+}, true);
 
-const showDevice = (device) => { $('device-name').textContent = DEVICE_NAMES[device]; };
+const showDevice = (device) => {
+  $('device-name').textContent = DEVICE_NAMES[device];
+  $('settings-device-name').textContent = DEVICE_NAMES[device];
+};
 askDevice().then(showDevice);
-$('change-device').addEventListener('click', () => changeDevice().then(showDevice));
+[$('change-device'), $('settings-change-device')].forEach((button) => button.addEventListener('click', () => changeDevice().then(showDevice)));
 
 function remember(key, value) {
   try {
@@ -139,7 +168,7 @@ refresh();
 setInterval(refresh, 3000);
 
 // ---------- Главное меню: вкладки ----------
-const TABS = ['play', 'cases', 'inventory', 'sprays', 'profile'];
+const TABS = ['play', 'cases', 'inventory', 'sprays', 'market', 'profile', 'settings'];
 let inventoryLoaded = false;
 
 function showTab(name) {
@@ -151,10 +180,11 @@ function showTab(name) {
     link.setAttribute('aria-selected', on);
   });
   // Кейсы и скины рисуются трёхмерным движком: грузим его только когда он нужен.
-  if (tab !== 'play' && tab !== 'sprays' && !inventoryLoaded) {
+  if (['cases', 'inventory', 'market'].includes(tab) && !inventoryLoaded) {
     inventoryLoaded = true;
     import('./inventory.js');
   }
+  window.dispatchEvent(new CustomEvent('poligon:tab', { detail: tab }));
   if (tab === 'profile') $('profile-nick').value = nickInput.value;
   window.scrollTo(0, 0);
 }
@@ -166,15 +196,25 @@ showTab(location.hash.slice(1));
 function renderChip(profile) {
   $('chip-nick').textContent = nickInput.value.trim() || 'Игрок';
   if (!profile) return;
-  $('chip-cases').textContent = `Кейсов: ${profile.cases}`;
-  $('cases-badge').hidden = profile.cases < 1;
-  $('cases-badge').textContent = profile.cases;
-  $('inv-cases').textContent = profile.cases > 0 ? `Кейсов: ${profile.cases}` : '';
+  $('chip-gold').textContent = profile.gold ?? 0;
+  $('chip-credits').textContent = profile.credits ?? 0;
+  const caseCount = (profile.cases || 0) + (profile.standardCases || 0) + (profile.premiumCases || 0);
+  $('cases-badge').hidden = caseCount < 1;
+  $('cases-badge').textContent = caseCount;
+  $('inv-cases').textContent = caseCount ? `Кейсов: ${caseCount}` : '';
 }
 
 nickInput.addEventListener('input', () => renderChip(null));
 window.addEventListener('poligon:profile', (event) => renderChip(event.detail));
-loadProfile().then(renderChip);
+let ownedSprays = new Set(['smile']);
+loadProfile().then((profile) => {
+  renderChip(profile);
+  if (profile?.sprays) { ownedSprays = new Set(profile.sprays); renderSprays(); }
+});
+window.addEventListener('poligon:profile', (event) => {
+  ownedSprays = new Set(event.detail?.sprays || ['smile']);
+  renderSprays();
+});
 
 // ---------- Спреи ----------
 function sprayCanvas(id, size) {
@@ -185,24 +225,33 @@ function sprayCanvas(id, size) {
 }
 
 function renderSprays() {
-  const chosen = chosenSpray();
+  let chosen = chosenSpray();
+  if (!ownedSprays.has(chosen)) { chosen = 'smile'; chooseSpray(chosen); }
   const grid = $('spray-grid');
   grid.replaceChildren();
   for (const spray of SPRAYS) {
     const card = document.createElement('button');
     card.type = 'button';
     card.className = 'spray-card';
+    const owned = ownedSprays.has(spray.id);
     card.classList.toggle('on', spray.id === chosen);
+    card.classList.toggle('locked', !owned);
+    card.disabled = !owned;
     card.setAttribute('aria-pressed', spray.id === chosen);
     const name = document.createElement('b');
     name.textContent = spray.name;
     card.append(sprayCanvas(spray.id, 160), name);
-    if (spray.id === chosen) {
+    if (!owned) {
+      const label = document.createElement('small');
+      label.textContent = 'Найдите в кейсе';
+      card.append(label);
+    } else if (spray.id === chosen) {
       const label = document.createElement('small');
       label.textContent = 'Выбран';
       card.append(label);
     }
     card.addEventListener('click', () => {
+      if (!owned) return;
       chooseSpray(spray.id);
       renderSprays();
     });

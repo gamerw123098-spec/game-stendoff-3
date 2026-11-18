@@ -1,5 +1,6 @@
 // Профиль игрока: код хранится в браузере, а кейсы и скины на сервере.
 const KEY = 'poligon.profile';
+let profileRequest = null;
 
 export function storedCode() {
   try {
@@ -27,15 +28,21 @@ export async function api(path, body) {
 }
 
 /** Загружает профиль или создаёт новый. При недоступном сервере возвращает null. */
-export async function loadProfile() {
-  try {
-    const code = storedCode();
-    let result = await api('/api/profile/', code ? { code } : {});
-    if (result.status === 404) result = await api('/api/profile/', {});
-    if (!result.ok) return null;
-    storeCode(result.data.code);
-    return result.data;
-  } catch {
-    return null;
-  }
+export function loadProfile() {
+  if (profileRequest) return profileRequest;
+  const request = (async () => {
+    try {
+      const code = storedCode();
+      let result = await api('/api/profile/', code ? { code } : {});
+      if (result.status === 404) result = await api('/api/profile/', {});
+      if (!result.ok) return null;
+      storeCode(result.data.code);
+      return result.data;
+    } catch {
+      return null;
+    }
+  })();
+  profileRequest = request;
+  request.then((profile) => { if (!profile && profileRequest === request) profileRequest = null; });
+  return request;
 }

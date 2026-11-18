@@ -1,6 +1,7 @@
 import json
 import random
 from collections import Counter
+from unittest.mock import patch
 
 from channels.testing import WebsocketCommunicator
 from django.test import Client, SimpleTestCase, TestCase, TransactionTestCase
@@ -216,9 +217,66 @@ class ProfileApiTests(TestCase):
         # Инвентарь переехал в главное меню, старый адрес ведёт туда.
         self.assertRedirects(Client().get("/inventory/"), "/#cases", fetch_redirect_response=False)
 
+    def test_currency_cases_and_spray_case_reward(self):
+        created = self.post("/api/profile/", {})
+        code = created["code"]
+        self.assertEqual((created["credits"], created["gold"]), (100, 0))
+        standard = self.post("/api/case/buy/", {"code": code, "type": "standard"})
+        self.assertEqual((standard["credits"], standard["standardCases"]), (0, 1))
+        with patch("game.profiles._roll_case_reward", return_value={"type": "spray", "id": "gg"}):
+            opened = self.post("/api/case/open/", {"code": code, "type": "standard"})
+        self.assertEqual(opened["reward"], {"type": "spray", "id": "gg"})
+        self.assertIn("gg", opened["profile"]["sprays"])
+        self.assertEqual(opened["profile"]["standardCases"], 0)
+        self.post("/api/case/open/", {"code": code, "type": "standard"}, status=409)
+
+    def test_gold_shop_buys_skin_and_premium_case(self):
+        created = self.post("/api/profile/", {})
+        code = created["code"]
+        Profile.objects.filter(code=code).update(gold=100)
+        result = self.post("/api/store/skin/", {"code": code, "skin": "knife_carbon"})
+        self.assertEqual(result["gold"], 50)
+        self.assertEqual(result["items"], [{"skin": "knife_carbon", "count": 1}])
+        result = self.post("/api/case/buy/", {"code": code, "type": "premium"})
+        self.assertEqual((result["gold"], result["premiumCases"]), (20, 1))
+        self.post("/api/store/skin/", {"code": code, "skin": "unknown"}, status=409)
+
+    def test_market_listing_transfers_item_and_gold(self):
+        seller_code = self.post("/api/profile/", {})["code"]
+        buyer_code = self.post("/api/profile/", {})["code"]
+        seller = Profile.objects.get(code=seller_code)
+        buyer = Profile.objects.get(code=buyer_code)
+        seller.gold = 20
+        buyer.gold = 500
+        seller.save(update_fields=["gold"])
+        buyer.save(update_fields=["gold"])
+        item = Item.objects.create(profile=seller, skin="rifle_dune")
+        listing = self.post("/api/market/", {"code": seller_code, "action": "list", "skin": "rifle_dune", "price": 180})
+        listing_id = listing["listings"][0]["id"]
+        self.assertEqual(listing["profile"]["items"][0]["listed"], 1)
+        self.post("/api/market/", {"code": seller_code, "action": "buy", "listing": listing_id}, status=409)
+        bought = self.post("/api/market/", {"code": buyer_code, "action": "buy", "listing": listing_id})
+        item.refresh_from_db()
+        seller.refresh_from_db()
+        self.assertEqual(item.profile_id, buyer.pk)
+        self.assertEqual((seller.gold, bought["profile"]["gold"]), (200, 320))
+        self.assertEqual(bought["listings"], [])
+
+    def test_market_rejects_equipped_skins_and_items_on_sale(self):
+        code = self.post("/api/profile/", {})["code"]
+        profile = Profile.objects.get(code=code)
+        Item.objects.create(profile=profile, skin="rifle_dune")
+        self.post("/api/equip/", {"code": code, "skin": "rifle_dune"})
+        self.post("/api/market/", {"code": code, "action": "list", "skin": "rifle_dune", "price": 25}, status=409)
+        self.post("/api/equip/", {"code": code, "skin": "rifle_dune", "equip": False})
+        result = self.post("/api/market/", {"code": code, "action": "list", "skin": "rifle_dune", "price": 25})
+        self.post("/api/equip/", {"code": code, "skin": "rifle_dune"}, status=409)
+        self.assertEqual(result["profile"]["items"][0]["listed"], 1)
+
     def test_main_menu_has_cases_inventory_sprays_and_profile(self):
         page = Client().get("/")
-        for text in ("Кейсы", "Инвентарь", "Спреи", "Профиль", 'id="open-case"', 'id="spray-grid"', 'id="catalog"'):
+        for text in ("Кейсы", "Инвентарь", "Спреи", "Рынок", "Настройки", "Профиль", 'id="open-case"',
+                     'id="market-listings"', 'id="settings-sound-toggle"', 'id="spray-grid"', 'id="catalog"'):
             self.assertContains(page, text)
 
 
@@ -237,6 +295,7 @@ class GameProfileTests(TransactionTestCase):
         await Item.objects.acreate(profile=profile, skin="rifle_magma")
         await db(profiles.set_equipped)(profile, "rifle_magma", True)
         cases_before = profile.cases
+        credits_before, gold_before = profile.credits, profile.gold
 
         room = rooms.create_room("tdm", 10)
         ws = WebsocketCommunicator(application, f"/ws/room/{room.code}/")
@@ -255,6 +314,7 @@ class GameProfileTests(TransactionTestCase):
             self.assertEqual(reward["ids"], [player.id])
             await profile.arefresh_from_db()
             self.assertEqual((profile.cases, profile.wins), (cases_before + 1, 1))
+            self.assertEqual((profile.credits, profile.gold), (credits_before + 100, gold_before + 25))
             self.assertEqual(profile.nick, "Аня")
 
             # Скин сняли в инвентаре: игра узнаёт об этом при возвращении на вкладку

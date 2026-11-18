@@ -1,4 +1,5 @@
 import math
+import random
 
 from django.test import SimpleTestCase
 
@@ -113,4 +114,14 @@ class AimTests(SimpleTestCase):
                 count += b.hp < 100 or not b.alive
             return count
 
-        self.assertGreater(hits(True), hits(False))
+        # Сравниваем одинаковые случайные смещения выстрелов: меньший разброс
+        # должен давать результат не хуже, независимо от состояния глобального RNG.
+        state = random.getstate()
+        try:
+            random.seed(712367)
+            aimed = hits(True)
+            random.seed(712367)
+            unaimed = hits(False)
+        finally:
+            random.setstate(state)
+        self.assertGreater(aimed, unaimed)

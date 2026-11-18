@@ -10,5 +10,8 @@ urlpatterns = [
     path("inventory/", views.inventory, name="inventory"),
     path("api/profile/", views.profile_api, name="profile_api"),
     path("api/case/open/", views.open_case_api, name="open_case_api"),
+    path("api/case/buy/", views.buy_case_api, name="buy_case_api"),
     path("api/equip/", views.equip_api, name="equip_api"),
+    path("api/store/skin/", views.buy_skin_api, name="buy_skin_api"),
+    path("api/market/", views.market_api, name="market_api"),
 ]

@@ -11,6 +11,7 @@
   <script type="importmap">{"imports": {"three": "{% static 'game/vendor/three.module.min.js' %}"}}</script>
 </head>
 <body class="lobby">
+  <div class="startup-screen" id="startup-screen" aria-hidden="true"><span class="loading-mark">PL</span><b>ПОЛИГОН</b><i>ЗАГРУЗКА ЛОББИ</i></div>
   <header class="topbar">
     <div class="topbar-in">
       <a class="logo" href="#play" data-tab-link="play">ПОЛИГОН</a>
@@ -19,12 +20,15 @@
         <a href="#cases" role="tab" data-tab-link="cases">Кейсы <b class="tab-badge" id="cases-badge" hidden></b></a>
         <a href="#inventory" role="tab" data-tab-link="inventory">Инвентарь</a>
         <a href="#sprays" role="tab" data-tab-link="sprays">Спреи</a>
+        <a href="#market" role="tab" data-tab-link="market">Рынок</a>
         <a href="#profile" role="tab" data-tab-link="profile">Профиль</a>
+        <a href="#settings" role="tab" data-tab-link="settings">Настройки</a>
       </nav>
       <div class="player-chip" aria-live="polite">
         <span class="chip-spray"><canvas id="chip-spray" width="64" height="64" aria-hidden="true"></canvas></span>
-        <span><b id="chip-nick">Игрок</b><small id="chip-cases">Кейсов: …</small></span>
+        <span><b id="chip-nick">Игрок</b><small title="Золото · кредиты"><span id="chip-gold">0</span> зол. · <span id="chip-credits">100</span> кред.</small></span>
       </div>
+      <button class="sound-toggle" id="ui-sound-toggle" type="button" aria-pressed="false" title="Включить звуки интерфейса">ЗВУК: ВЫКЛ</button>
     </div>
   </header>
 
@@ -42,8 +46,10 @@
     <!-- ===== Играть ===== -->
     <section class="tab-page" id="tab-play" role="tabpanel">
       <header class="brand">
+        <span class="eyebrow">СЕТЕВАЯ ИГРА · БРАУЗЕРНЫЙ FPS</span>
         <h1>ПОЛИГОН</h1>
         <p>Командный 3D-шутер прямо в браузере: террористы против антитеррористов.</p>
+        <div class="brand-actions"><a class="primary" href="#cases" data-tab-link="cases">АРСЕНАЛ И КЕЙСЫ <span>↗</span></a><a class="secondary" href="#profile" data-tab-link="profile">ПРОФИЛЬ И НАСТРОЙКИ</a></div>
       </header>
 
       <section class="enter card">
@@ -117,11 +123,13 @@
         <div class="case-info">
           <h2>Кейс «Депо»</h2>
           <p class="sub-line">Кейс дают за победу в матче. Первый в подарок.</p>
-          <p class="case-count">Кейсов: <b id="case-count">0</b></p>
+          <p class="case-count">Бесплатных: <b id="case-count">0</b></p>
           <button class="primary" id="open-case" type="button" disabled>Открыть кейс</button>
+          <div class="case-purchases"><div><span>Обычный кейс</span><small>Спреи и скины · 100 кредитов</small><b>В наличии: <i id="standard-case-count">0</i></b><button id="buy-standard-case" type="button">Купить за 100 кредитов</button><button class="primary" id="open-standard-case" type="button" disabled>Открыть обычный</button></div><div class="premium-case"><span>Особый кейс</span><small>Повышенный шанс редких скинов · спреи</small><b>В наличии: <i id="premium-case-count">0</i></b><button id="buy-premium-case" type="button">Купить за 30 золота</button><button class="primary" id="open-premium-case" type="button" disabled>Открыть особый</button></div></div>
+          <p class="case-cost-note">Победа в матче даёт +100 кредитов и +25 золота. Бесплатный кейс также начисляется за победу.</p>
         </div>
         <div class="odds">
-          <h3>Шансы</h3>
+          <h3>Шансы редкости <small>в %: бесплатный / обычный / особый</small></h3>
           <ul id="odds"></ul>
         </div>
       </section>
@@ -133,6 +141,7 @@
     <section class="tab-page" id="tab-inventory" role="tabpanel" hidden>
       <h1 class="inv-title">Инвентарь</h1>
       <p class="sub-line">Нажмите на скин, чтобы надеть его или снять. Надетые скины видны всем в игре.</p>
+      <div class="inventory-tools"><label>Поиск <input id="inventory-search" type="search" placeholder="Название или оружие"></label><label>Редкость <select id="inventory-rarity"><option value="">Все редкости</option></select></label><label>Сортировка <select id="inventory-sort"><option value="rarity">Редкость</option><option value="name">Название</option><option value="weapon">Оружие</option></select></label></div>
       <p id="empty-note" class="sub-line">Пока пусто. Откройте кейс или победите в матче.</p>
       <div id="my-items" class="skin-grid"></div>
     </section>
@@ -144,9 +153,18 @@
       <div id="spray-grid" class="spray-grid"></div>
     </section>
 
+    <section class="tab-page" id="tab-market" role="tabpanel" hidden>
+      <h1 class="inv-title">Рынок</h1><p class="sub-line">Покупайте скины у игроков или за золото из каталога. Валюты внутриигровые, без покупок за реальные деньги.</p>
+      <section class="profile-panel market-sell"><h2>Выставить свой скин</h2><form id="market-list-form" class="market-list-form"><label class="field"><span>Предмет</span><select id="market-skin" required></select></label><label class="field"><span>Цена в золоте</span><input id="market-price" type="number" min="1" max="100000" value="20" required></label><button class="primary" type="submit">Выставить</button></form><p class="sub-line">Надетый скин нельзя выставить. Плата за размещение не взимается.</p></section>
+      <h2 class="section-title">Каталог за золото</h2><div id="gold-store-grid" class="skin-grid"></div>
+      <h2 class="section-title">Объявления игроков</h2><div id="market-listings" class="skin-grid" aria-live="polite"></div>
+    </section>
+
     <!-- ===== Профиль ===== -->
     <section class="tab-page" id="tab-profile" role="tabpanel" hidden>
       <h1 class="inv-title">Профиль</h1>
+      <section class="profile-overview"><div class="profile-avatar" aria-hidden="true">PL</div><div class="profile-identity"><small>ОПЕРАТИВНЫЙ ПРОФИЛЬ</small><h2 id="profile-display-nick">Игрок</h2><span>Уровень <b id="profile-level">1</b></span></div><div class="profile-stats"><div><b id="profile-wins">0</b><small>ПОБЕДЫ</small></div><div><b id="profile-item-count">0</b><small>ПРЕДМЕТЫ</small></div><div><b id="profile-case-count">0</b><small>КЕЙСЫ</small></div></div></section>
+      <section class="profile-panel"><h2>Награды</h2><div class="achievement-list" id="achievement-list"><span class="achievement">Первая победа · за 1 победу</span><span class="achievement">Коллекционер · за 5 предметов</span><span class="achievement">Арсенал · за 20 предметов</span></div></section>
       <section class="profile-panel">
         <h2>Устройство</h2>
         <p class="sub-line">Сейчас: <b id="device-name">…</b>. От этого зависит управление в игре.</p>
@@ -176,6 +194,13 @@
         </form>
       </section>
     </section>
+
+    <section class="tab-page" id="tab-settings" role="tabpanel" hidden>
+      <h1 class="inv-title">Настройки</h1>
+      <section class="profile-panel settings-row"><div><h2>Звуки интерфейса</h2><p class="sub-line">Звуковые подтверждения нажатий в меню.</p></div><button class="sound-toggle" id="settings-sound-toggle" data-sound-mirror type="button" aria-pressed="false">ЗВУК: ВЫКЛ</button></section>
+      <section class="profile-panel"><h2>Устройство и управление</h2><p class="sub-line">Определённое устройство: <b id="settings-device-name">…</b></p><button class="primary settings-device" id="settings-change-device" type="button">Выбрать устройство</button><p class="sub-line">Расположение экранных кнопок можно настроить в игре: откройте меню и выберите редактор управления.</p></section>
+      <section class="profile-panel"><h2>Счётчики производительности</h2><p class="sub-line">FPS, батарея и сеть включаются с согласия игрока отдельно на экране игры.</p><a class="secondary settings-game-link" href="#play" data-tab-link="play">Вернуться в лобби и открыть игру</a></section>
+    </section>
   </main>
 
   <div id="roulette" class="roulette" hidden>
@@ -186,6 +211,7 @@
       </div>
       <div id="result" class="result" hidden>
         <img id="result-image" alt="">
+        <canvas id="result-spray" width="256" height="256" hidden aria-label="Полученный спрей"></canvas>
         <small id="result-rarity"></small>
         <h2 id="result-name"></h2>
         <div class="result-actions">

@@ -42,6 +42,8 @@ def _catalog() -> dict:
         "rarities": RARITIES,
         "weapons": {key: weapon["name"] for key, weapon in WEAPONS.items()},
         "order": WEAPON_ORDER,
+        "goldPrices": profiles.SKIN_GOLD_PRICE,
+        "sprays": profiles.SPRAYS,
     }
 
 
@@ -138,13 +140,78 @@ def profile_api(request):
 @csrf_exempt
 @require_POST
 def open_case_api(request):
-    profile = profiles.get_profile(_json_body(request).get("code"))
+    data = _json_body(request)
+    profile = profiles.get_profile(data.get("code"))
     if profile is None:
         return JsonResponse({"error": "Профиль не найден"}, status=404)
-    skin = profiles.open_case(profile)
-    if skin is None:
-        return JsonResponse({"error": "Кейсов нет. Их дают за победу в матче."}, status=409)
-    return JsonResponse({"skin": skin["id"], "profile": profiles.payload(profile)})
+    case_type = data.get("type", "free")
+    reward = profiles.open_case(profile, case_type if isinstance(case_type, str) else "")
+    if reward is None:
+        return JsonResponse({"error": "Такого кейса нет или он закончился. Обычный кейс стоит 100 кредитов."}, status=409)
+    result = {"reward": reward, "profile": profiles.payload(profile)}
+    if reward["type"] == "skin":
+        result["skin"] = reward["id"]
+    return JsonResponse(result)
+
+
+@csrf_exempt
+@require_POST
+def buy_case_api(request):
+    data = _json_body(request)
+    profile = profiles.get_profile(data.get("code"))
+    case_type = data.get("type")
+    if profile is None:
+        return JsonResponse({"error": "Профиль не найден"}, status=404)
+    if not profiles.buy_case(profile, case_type):
+        return JsonResponse({"error": "Не хватает золота/кредитов или выбран неверный кейс"}, status=409)
+    return JsonResponse(profiles.payload(profile))
+
+
+@csrf_exempt
+@require_POST
+def buy_skin_api(request):
+    data = _json_body(request)
+    profile = profiles.get_profile(data.get("code"))
+    if profile is None:
+        return JsonResponse({"error": "Профиль не найден"}, status=404)
+    if not profiles.buy_skin(profile, data.get("skin")):
+        return JsonResponse({"error": "Не хватает золота или скин не найден"}, status=409)
+    return JsonResponse(profiles.payload(profile))
+
+
+@csrf_exempt
+def market_api(request):
+    if request.method == "GET":
+        return JsonResponse({"listings": profiles.market_payload()})
+    if request.method != "POST":
+        return JsonResponse({"error": "Метод не поддерживается"}, status=405)
+    data = _json_body(request)
+    profile = profiles.get_profile(data.get("code"))
+    if profile is None:
+        return JsonResponse({"error": "Профиль не найден"}, status=404)
+    action = data.get("action")
+    if action == "listings":
+        return JsonResponse({"listings": profiles.market_payload(profile)})
+    if action == "list":
+        raw_price = data.get("price")
+        try:
+            price = int(raw_price) if not isinstance(raw_price, bool) else 0
+        except (TypeError, ValueError, OverflowError):
+            price = 0
+        ok = profiles.list_skin(profile, data.get("skin"), price)
+        error = "Не удалось выставить скин: проверьте владение, цену и что скин не надет"
+    elif action == "buy":
+        ok = profiles.buy_listing(profile, data.get("listing"))
+        error = "Сделка недоступна, это ваше объявление или не хватает золота"
+    elif action == "cancel":
+        ok = profiles.cancel_listing(profile, data.get("listing"))
+        error = "Объявление не найдено"
+    else:
+        return JsonResponse({"error": "Неизвестное действие рынка"}, status=400)
+    if not ok:
+        return JsonResponse({"error": error}, status=409)
+    profile.refresh_from_db()
+    return JsonResponse({"profile": profiles.payload(profile), "listings": profiles.market_payload(profile)})
 
 
 @csrf_exempt

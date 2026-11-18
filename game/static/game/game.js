@@ -362,7 +362,7 @@ function onWelcome(msg) {
   initGraphics();
   state.loadMs = Math.round(performance.now() - loadStart);
   if (TOUCH) {
-    touchControls = new TouchControls({ parent: $('hud'), look: applyLook, pause: releaseLock, chat: openChat });
+    touchControls = new TouchControls({ parent: $('hud'), look: applyLook, pause: releaseLock, chat: toggleChat });
     $('slots').addEventListener('pointerdown', (event) => {
       const index = [...$('slots').children].indexOf(event.target);
       const code = ['Digit1', 'Digit2', 'Digit3', 'Digit5'][index];
@@ -1467,6 +1467,11 @@ function closeChat() {
   $('chat-form').hidden = true;
   $('chat-hint').hidden = $('chat-log').children.length > 0;
   $('chat-input').blur();
+}
+
+function toggleChat() {
+  if (chatOpen) closeChat();
+  else openChat();
 }
 
 function appendChatMessage(msg) {

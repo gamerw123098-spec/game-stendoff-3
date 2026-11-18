@@ -55,9 +55,24 @@ _ALL = [
     _skin("heavy_sniper_void", "heavy_sniper", "Пустота", "legendary", "circuit", ["#05060f", "#b04dff"], glow=True),
     _skin("heavy_pistol_royal", "heavy_pistol", "Корона", "epic", "brushed", ["#ffd76a", "#8a5a10"]),
 
+    # Новая серия скинов для разных классов оружия.
+    _skin("rifle_sandstorm", "rifle", "Песчаная буря", "rare", "camo", ["#c88d46", "#62452b", "#ead08a"]),
+    _skin("rifle_blueprint", "rifle", "Чертёж", "epic", "circuit", ["#071526", "#33b8ff"], glow=True),
+    _skin("smg_nebula", "smg", "Туманность", "epic", "gradient", ["#1e124f", "#fd4d9b", "#4de5ff"], glow=True),
+    _skin("pistol_copper", "pistol", "Медь", "rare", "brushed", ["#c87642", "#6b2d1c"]),
+    _skin("sniper_whiteout", "sniper", "Белая мгла", "legendary", "digital", ["#ffffff", "#9de5ff", "#536a8a"], glow=True),
+    _skin("shotgun_breach", "shotgun", "Пролом", "rare", "stripes", ["#e45b28", "#48140f"]),
+    _skin("lmg_foundry", "lmg", "Литейная", "epic", "brushed", ["#a8b2b7", "#293039", "#e1a33c"]),
+    _skin("heavy_pistol_spectrum", "heavy_pistol", "Спектр", "legendary", "gradient", ["#ff3b77", "#8248ff", "#2adfff"], glow=True),
+
     _skin("knife_gold", "knife", "Золото", "mythic", "brushed", ["#ffd76a", "#b98a1e"], glow=True),
     _skin("knife_abyss", "knife", "Бездна", "mythic", "lava", ["#0b0618", "#7a2bff", "#ff4df0"], glow=True),
     _skin("knife_glacier", "knife", "Ледник", "mythic", "gradient", ["#f2fbff", "#2c8fe0"], glow=True),
+    _skin("knife_ember", "knife", "Угольный след", "legendary", "lava", ["#170b09", "#f04421", "#ffca62"], glow=True),
+    _skin("knife_verdant", "knife", "Зелёный импульс", "epic", "circuit", ["#061c14", "#28e88a"], glow=True),
+    _skin("knife_carbon", "knife", "Карбон", "rare", "carbon", ["#656d78", "#171a20"]),
+    _skin("knife_tide", "knife", "Прилив", "epic", "gradient", ["#06c9d8", "#153a7d"]),
+    _skin("knife_rust", "knife", "Реликт", "rare", "brushed", ["#cc7844", "#4b2d25"]),
 ]
 
 SKINS = {skin["id"]: skin for skin in _ALL}
