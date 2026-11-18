@@ -15,6 +15,8 @@ from functools import cached_property
 
 EPS = 1e-9
 SITE_RADIUS = 3.5
+FFA_SPAWNS = 24  # точек появления в режимах «каждый сам за себя»
+FFA_CLEAR = 0.5
 # Во сколько раз карты больше своих чертежей ниже. Растут расстояния и длинные стены,
 # а ящики, бочки и толщина стен остаются прежними.
 MAP_SCALE = 2.2
@@ -455,6 +457,33 @@ class GameMap:
     @cached_property
     def nav(self) -> NavGraph:
         return NavGraph(self)
+
+    @cached_property
+    def ffa_spawns(self) -> list[tuple[float, float]]:
+        """Точки появления в режимах «каждый сам за себя»: по всей карте и как можно дальше друг от друга."""
+        nav = self.nav
+        start = nav.nearest(*self.spawns[0][0])
+        reachable = {start}
+        stack = [start]
+        while stack:
+            for other in nav.links[stack.pop()]:
+                if other not in reachable:
+                    reachable.add(other)
+                    stack.append(other)
+        free = [
+            i for i in sorted(reachable)
+            if not any(self.point_inside(nav.points[i][0], y, nav.points[i][1], FFA_CLEAR) for y in (0.1, 1.0, 1.7))
+        ]
+        # Каждая следующая точка выбирается дальше всех от уже выбранных.
+        chosen = [min(free, key=lambda i: (nav.points[i][0] + self.half_x) ** 2 + nav.points[i][1] ** 2)]
+        distance = {i: math.inf for i in free}
+        while len(chosen) < min(FFA_SPAWNS, len(free)):
+            lx, lz = nav.points[chosen[-1]]
+            for i in free:
+                x, z = nav.points[i]
+                distance[i] = min(distance[i], (x - lx) ** 2 + (z - lz) ** 2)
+            chosen.append(max(free, key=lambda i: distance[i]))
+        return [nav.points[i] for i in chosen]
 
     @cached_property
     def grid(self) -> dict[tuple[int, int], list[Box]]:

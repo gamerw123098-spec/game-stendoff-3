@@ -21,6 +21,7 @@ const BUTTONS = [
   { id: 'menu', label: 'МЕНЮ', pause: true, group: 'system' },
   { id: 'score', label: 'СЧЁТ', key: 'Tab', hold: true, group: 'system' },
   { id: 'shop', label: 'МАГАЗ.', key: 'KeyB', only: 'shop', group: 'system' },
+  { id: 'chat', label: 'ЧАТ', chat: true, group: 'system' },
 ];
 
 function sendKey(type, code) {
@@ -45,14 +46,17 @@ export function enterFullscreen() {
 }
 
 export class TouchControls {
-  constructor({ parent, look, pause }) {
+  constructor({ parent, look, pause, chat }) {
     this.look = look;
     this.pause = pause;
+    this.chat = chat;
     this.forward = 0;
     this.strafe = 0;
     this.stick = null; // { id, x, y }
     this.lookers = new Map(); // палец → последняя точка
     this.held = new Map(); // кнопка → отпустить
+    this.editing = false;
+    this.layout = this._readLayout();
 
     this.root = document.createElement('div');
     this.root.id = 'touch';
@@ -74,6 +78,7 @@ export class TouchControls {
       button.className = 'touch-btn';
       button.id = `touch-${spec.id}`;
       button.textContent = spec.label;
+      this._placeButton(button, spec.id);
       this._wire(button, spec);
       (groups[spec.group] || this.root).append(button);
       return { button, spec };
@@ -89,6 +94,49 @@ export class TouchControls {
   setActive(active) {
     this.root.hidden = !active;
     if (!active) this.reset();
+  }
+
+  _readLayout() {
+    try { return JSON.parse(localStorage.getItem('poligon.touchLayout') || '{}'); }
+    catch { return {}; }
+  }
+
+  _placeButton(button, id) {
+    const point = this.layout[id];
+    if (!point) return;
+    button.style.left = `${point.x * 100}%`;
+    button.style.top = `${point.y * 100}%`;
+    button.style.right = 'auto';
+    button.style.bottom = 'auto';
+  }
+
+  setEditing(editing) {
+    this.editing = editing;
+    this.root.classList.toggle('editing', editing);
+    if (editing) {
+      this.setActive(true);
+      this.reset();
+    }
+  }
+
+  saveLayout() {
+    const bounds = this.root.getBoundingClientRect();
+    for (const { button, spec } of this.buttons) {
+      const rect = button.getBoundingClientRect();
+      this.layout[spec.id] = {
+        x: Math.max(0, Math.min(1, (rect.left - bounds.left) / bounds.width)),
+        y: Math.max(0, Math.min(1, (rect.top - bounds.top) / bounds.height)),
+      };
+    }
+    try { localStorage.setItem('poligon.touchLayout', JSON.stringify(this.layout)); } catch {}
+  }
+
+  resetLayout() {
+    this.layout = {};
+    try { localStorage.removeItem('poligon.touchLayout'); } catch {}
+    for (const { button } of this.buttons) {
+      button.style.left = button.style.top = button.style.right = button.style.bottom = '';
+    }
   }
 
   /** Гранаты и магазин есть не в каждом режиме, бомба только в обезвреживании. */
@@ -113,6 +161,10 @@ export class TouchControls {
     const press = () => {
       if (spec.pause) {
         this.pause();
+        return;
+      }
+      if (spec.chat) {
+        this.chat?.();
         return;
       }
       if (spec.toggle) {
@@ -146,9 +198,23 @@ export class TouchControls {
       finger = event.pointerId;
       last = [event.clientX, event.clientY];
       button.setPointerCapture?.(event.pointerId);
+      if (this.editing) {
+        button.dataset.dragX = String(event.clientX - button.getBoundingClientRect().left);
+        button.dataset.dragY = String(event.clientY - button.getBoundingClientRect().top);
+        return;
+      }
       press();
     });
     button.addEventListener('pointermove', (event) => {
+      if (event.pointerId === finger && this.editing) {
+        const bounds = this.root.getBoundingClientRect();
+        const x = Math.max(0, Math.min(bounds.width - button.offsetWidth, event.clientX - bounds.left - Number(button.dataset.dragX)));
+        const y = Math.max(0, Math.min(bounds.height - button.offsetHeight, event.clientY - bounds.top - Number(button.dataset.dragY)));
+        button.style.left = `${x / bounds.width * 100}%`;
+        button.style.top = `${y / bounds.height * 100}%`;
+        button.style.right = button.style.bottom = 'auto';
+        return;
+      }
       if (event.pointerId !== finger || !spec.look) return;
       this.look((event.clientX - last[0]) * LOOK_SPEED, (event.clientY - last[1]) * LOOK_SPEED);
       last = [event.clientX, event.clientY];
@@ -156,6 +222,7 @@ export class TouchControls {
     const up = (event) => {
       if (event.pointerId !== finger) return;
       finger = null;
+      if (this.editing) return;
       if (spec.hold && this.held.has(spec.id)) {
         this.held.get(spec.id)();
         this.held.delete(spec.id);

@@ -55,7 +55,10 @@ const settings = {
   volume: Number(load('volume', 0.5)),
   quality: load('quality', TOUCH ? 'low' : 'medium'),
   autoShop: load('autoShop', '1') === '1',
+  telemetry: load('telemetryConsent', '0') === '1',
 };
+let batteryManager = null;
+let batteryChanged = null;
 
 const sfx = new Sfx(settings.volume);
 
@@ -128,6 +131,7 @@ let locked = false;
 let everLocked = false;
 let shopOpen = false;
 let shopPending = false;
+let chatOpen = false;
 let lockedThisMatch = false; // игрок уже вошёл в игру с начала этого матча
 let lastSend = 0;
 let boardHeld = false;
@@ -297,6 +301,7 @@ function handle(msg) {
       state.hostId = msg.host;
       onRoster(msg.players);
       break;
+    case 'chat': appendChatMessage(msg); break;
     case 'spawn': onSpawn(msg); break;
     case 'shot': onShot(msg); break;
     case 'hit': onHit(msg); break;
@@ -357,7 +362,7 @@ function onWelcome(msg) {
   initGraphics();
   state.loadMs = Math.round(performance.now() - loadStart);
   if (TOUCH) {
-    touchControls = new TouchControls({ parent: $('hud'), look: applyLook, pause: releaseLock });
+    touchControls = new TouchControls({ parent: $('hud'), look: applyLook, pause: releaseLock, chat: openChat });
     $('slots').addEventListener('pointerdown', (event) => {
       const index = [...$('slots').children].indexOf(event.target);
       const code = ['Digit1', 'Digit2', 'Digit3', 'Digit5'][index];
@@ -653,21 +658,59 @@ function closeShop(relock = true) {
   else showMenuIfUnlocked();
 }
 
-function shopItem(id, title, price, details) {
+function shopIcon(id, category) {
+  const paths = {
+    pistol: 'M13 21h22l8 6h18v7H38l-6 12H20l4-13h-9z',
+    smg: 'M7 22h42l10 7h18v7H57l-7 10H38l3-10H7z',
+    shotgun: 'M4 25h59l13 5v5H47l-8 11H27l4-11H4z',
+    rifle: 'M3 25h74l13 5v5H61L50 45H37l5-10H3z',
+    sniper: 'M3 25h74l13 5v5H61L50 45H37l5-10H3z M38 17h24v5H38z',
+    mg: 'M3 24h78l12 7v6H71l-9 8H47l3-8H3z',
+    grenade: 'M34 9h15v8H34z M31 16c-14 0-23 10-23 22s9 17 23 17 25-5 25-17-10-22-25-22z',
+    armor: 'M38 8 66 19v18c0 16-12 25-28 32C22 62 10 53 10 37V19z',
+    kit: 'M14 43 43 14l8 8-29 29h-8z M43 14l7-7 14 14-7 7z M12 49l-3 11 11-3z',
+  };
+  const glyph = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  glyph.setAttribute('viewBox', '0 0 100 76');
+  glyph.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', paths[category] || paths[id] || paths.rifle);
+  glyph.append(path);
+  return glyph;
+}
+
+function shopItem(id, title, price, details, category = 'gear') {
+  const card = document.createElement('article');
+  card.className = `shop-item cat-${category}`;
+  card.dataset.item = id;
+  const icon = document.createElement('div');
+  icon.className = 'shop-icon';
+  icon.append(shopIcon(id, category));
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = 'shop-item';
-  button.dataset.item = id;
-  const name = document.createElement('b');
-  name.textContent = title;
+  button.className = 'shop-buy';
   const cost = document.createElement('span');
   cost.className = 'price';
   cost.textContent = `$${price}`;
   const info = document.createElement('small');
   info.textContent = details;
+  const name = document.createElement('b');
+  name.className = 'shop-title';
+  name.textContent = title;
   button.append(name, cost, info);
   button.addEventListener('click', () => send({ t: 'buy', item: id }));
-  return button;
+  const request = document.createElement('button');
+  request.type = 'button';
+  request.className = 'shop-request';
+  request.textContent = 'Попросить команду купить';
+  request.hidden = true;
+  request.addEventListener('click', () => {
+    send({ t: 'buy_request', item: id });
+    request.textContent = 'Запрос отправлен';
+    request.disabled = true;
+  });
+  card.append(icon, button, request);
+  return card;
 }
 
 const SIGHT_NAMES = {
@@ -695,7 +738,7 @@ function buildShop() {
     const heading = document.createElement('h3');
     heading.textContent = title;
     column.append(heading);
-    for (const id of ids) column.append(shopItem(id, list[id].name, list[id].price, weaponDetails(list[id])));
+    for (const id of ids) column.append(shopItem(id, list[id].name, list[id].price, weaponDetails(list[id]), cat));
     root.append(column);
   }
   const gear = document.createElement('section');
@@ -703,13 +746,13 @@ function buildShop() {
   heading.textContent = 'Снаряжение';
   gear.append(heading);
   for (const [id, item] of Object.entries(state.welcome.armor)) {
-    gear.append(shopItem(id, item.name, item.price, item.text));
+    gear.append(shopItem(id, item.name, item.price, item.text, 'armor'));
   }
   if (state.welcome.mode === 'defuse') {
-    gear.append(shopItem('kit', 'Набор сапёра', state.welcome.kitPrice, 'Обезвреживание вдвое быстрее'));
+    gear.append(shopItem('kit', 'Набор сапёра', state.welcome.kitPrice, 'Обезвреживание вдвое быстрее', 'kit'));
   }
   for (const [id, item] of Object.entries(state.welcome.grenades)) {
-    gear.append(shopItem(id, item.name, item.price, `${item.text}. Бросок: ${item.key}`));
+    gear.append(shopItem(id, item.name, item.price, `${item.text}. Бросок: ${item.key}`, 'grenade'));
   }
   root.append(gear);
 }
@@ -730,16 +773,21 @@ function shopItemState(id) {
 function renderShop() {
   setText('shop-money', `$${me.money}`);
   setText('shop-timer', `${Math.ceil(me.buyLeft)} с`);
-  document.querySelectorAll('.shop-item').forEach((button) => {
-    const { price, has, count, hidden } = shopItemState(button.dataset.item);
-    button.hidden = !!hidden;
+  document.querySelectorAll('.shop-item').forEach((card) => {
+    const { price, has, count, hidden } = shopItemState(card.dataset.item);
+    const button = card.querySelector('.shop-buy');
+    card.hidden = !!hidden;
     button.disabled = has || me.money < price;
-    button.classList.toggle('owned', has);
-    const label = button.querySelector('.price');
+    card.classList.toggle('owned', has);
+    card.classList.toggle('unaffordable', !has && me.money < price);
+    const label = card.querySelector('.price');
     let text = `$${price}`;
     if (has) text = count > 1 ? `Есть ×${count}` : 'Есть';
     else if (count) text = `$${price} (есть ×${count})`;
     if (label.textContent !== text) label.textContent = text;
+    const request = card.querySelector('.shop-request');
+    request.hidden = has || me.money >= price || price <= 0;
+    if (!request.disabled) request.textContent = 'Попросить команду купить';
   });
 }
 
@@ -942,6 +990,8 @@ function buildRadar(world) {
   radarScale = RADAR_WIDTH / (world.halfX * 2);
   canvas.width = RADAR_WIDTH;
   canvas.height = Math.round(world.halfZ * 2 * radarScale);
+  // Название режима и код игры стоят под мини-картой и не наезжают на табло счёта.
+  $('hud').style.setProperty('--radar-bottom', `${32 + canvas.height}px`);
   radarBase = document.createElement('canvas');
   radarBase.width = canvas.width;
   radarBase.height = canvas.height;
@@ -1401,7 +1451,77 @@ document.addEventListener('wheel', (event) => {
 
 const MOVE_KEYS = ['KeyW', 'KeyA', 'KeyS', 'KeyD'];
 
+function openChat() {
+  if (!state.joined || !state.connected || chatOpen) return;
+  chatOpen = true;
+  keys.clear();
+  me.fireHeld = false;
+  touchControls?.reset();
+  $('chat-form').hidden = false;
+  $('chat-hint').hidden = true;
+  $('chat-input').focus();
+}
+
+function closeChat() {
+  chatOpen = false;
+  $('chat-form').hidden = true;
+  $('chat-hint').hidden = $('chat-log').children.length > 0;
+  $('chat-input').blur();
+}
+
+function appendChatMessage(msg) {
+  $('chat-hint').hidden = true;
+  const row = document.createElement('div');
+  row.className = `chat-line${msg.kind ? ` ${msg.kind}` : ''}`;
+  if (msg.kind === 'request') {
+    const text = document.createElement('span');
+    text.textContent = `${msg.name} просит купить: ${msg.itemName} ($${msg.price})`;
+    row.append(text);
+    const action = document.createElement('button');
+    action.type = 'button';
+    action.textContent = `Купить за $${msg.price}`;
+    action.disabled = !me.alive || me.buyLeft <= 0 || me.money < msg.price;
+    action.addEventListener('click', () => {
+      send({ t: 'buy_gift', target: msg.id, item: msg.item });
+      action.disabled = true;
+      action.textContent = 'Запрос отправлен';
+    });
+    row.append(action);
+  } else if (msg.kind === 'bought') {
+    row.textContent = `${msg.name} купил ${msg.itemName} для ${msg.targetName} ($${msg.price})`;
+  } else {
+    const name = document.createElement('b');
+    name.textContent = `${msg.name}: `;
+    name.className = msg.team ? TEAM_CLASS[msg.side] || '' : '';
+    const text = document.createElement('span');
+    text.textContent = msg.text;
+    row.append(name, text);
+  }
+  $('chat-log').append(row);
+  while ($('chat-log').children.length > 28) $('chat-log').firstElementChild.remove();
+  $('chat-log').scrollTop = $('chat-log').scrollHeight;
+}
+
+$('chat-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  const input = $('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  send({ t: 'chat', text, team: $('chat-scope').value === 'team' });
+  input.value = '';
+  input.focus();
+});
+
 document.addEventListener('keydown', (event) => {
+  if (chatOpen) {
+    if (event.code === 'Escape') { event.preventDefault(); closeChat(); }
+    return;
+  }
+  if (event.code === 'Enter' && locked && !shopOpen) {
+    event.preventDefault();
+    openChat();
+    return;
+  }
   if (cursorFree) {
     if (event.repeat) return;
     if (event.code === 'KeyP') requestLock();
@@ -2196,6 +2316,46 @@ function updateCamera(dt) {
 // предлагаем включить простую графику одной клавишей.
 let slowWindows = 0;
 let perfTipShown = false;
+function renderTelemetry(fps) {
+  const note = $('netinfo');
+  note.hidden = !settings.telemetry;
+  if (!settings.telemetry || note.dataset.toast) return;
+  const battery = batteryManager
+    ? `${Math.round(batteryManager.level * 100)}%${batteryManager.charging ? ' ⚡' : ''}`
+    : 'н/д';
+  const online = navigator.onLine && state.connected;
+  const ping = Number.isFinite(state.ping) ? `${state.ping} мс` : '…';
+  const connection = navigator.connection;
+  const speed = Number.isFinite(connection?.downlink) ? ` · ${connection.downlink} Мбит/с` : '';
+  note.textContent = `FPS ${fps} · батарея ${battery} · интернет ${online ? ping : 'нет связи'}${speed}`;
+}
+
+async function enableTelemetry(enabled) {
+  settings.telemetry = enabled;
+  save('telemetryConsent', enabled ? '1' : '0');
+  if (!enabled) {
+    if (batteryManager && batteryChanged) {
+      batteryManager.removeEventListener('levelchange', batteryChanged);
+      batteryManager.removeEventListener('chargingchange', batteryChanged);
+    }
+    batteryManager = null;
+    batteryChanged = null;
+    $('netinfo').hidden = true;
+    return;
+  }
+  if (!navigator.getBattery) return;
+  try {
+    const battery = await navigator.getBattery();
+    if (!settings.telemetry) return;
+    batteryManager = battery;
+    batteryChanged = () => renderTelemetry(Math.round((fpsFrames * 1000) / Math.max(1, performance.now() - fpsSince)));
+    battery.addEventListener('levelchange', batteryChanged);
+    battery.addEventListener('chargingchange', batteryChanged);
+  } catch {
+    // Некоторые браузеры блокируют или не поддерживают доступ к батарее.
+  }
+}
+
 function checkPerformance(fps) {
   if (perfTipShown || settings.quality === 'low' || !inMatch() || !lockedThisMatch) return;
   slowWindows = fps < 25 ? slowWindows + 1 : Math.max(0, slowWindows - 1);
@@ -2284,8 +2444,7 @@ function frame(nowMs) {
     fpsFrames = 0;
     fpsSince = nowMs;
     checkPerformance(fps);
-    const net = $('netinfo');
-    net.textContent = net.dataset.toast || `FPS ${fps} · пинг ${state.ping} мс${sfx.muted ? ' · без звука' : ''}`;
+    renderTelemetry(fps);
   }
 }
 
@@ -2340,6 +2499,11 @@ autoShopInput.addEventListener('change', () => {
   save('autoShop', settings.autoShop ? '1' : '0');
 });
 
+const telemetryConsentInput = $('telemetry-consent');
+telemetryConsentInput.checked = settings.telemetry;
+telemetryConsentInput.addEventListener('change', () => enableTelemetry(telemetryConsentInput.checked));
+enableTelemetry(settings.telemetry);
+
 $('resume').addEventListener('click', requestLock);
 document.querySelectorAll('[data-addr]').forEach((element) => { element.textContent = config.base; });
 $('reconnect').addEventListener('click', () => location.reload());
@@ -2371,6 +2535,23 @@ document.querySelectorAll('[data-team]').forEach((button) => {
 });
 $('bot-add').addEventListener('click', () => send({ t: 'bot', op: 'add' }));
 $('bot-remove').addEventListener('click', () => send({ t: 'bot', op: 'remove' }));
+
+const touchLayoutSection = $('touch-layout-settings');
+if (touchLayoutSection) touchLayoutSection.hidden = !TOUCH;
+$('touch-layout-edit')?.addEventListener('click', () => {
+  if (!touchControls) return;
+  $('overlay').hidden = true;
+  $('touch-layout-toolbar').hidden = false;
+  touchControls.setEditing(true);
+});
+$('touch-layout-save')?.addEventListener('click', () => {
+  touchControls?.saveLayout();
+  touchControls?.setEditing(false);
+  touchControls?.setActive(false);
+  $('touch-layout-toolbar').hidden = true;
+  showMenuIfUnlocked();
+});
+$('touch-layout-reset')?.addEventListener('click', () => touchControls?.resetLayout());
 
 const sensInput = $('sens');
 sensInput.value = settings.sens;

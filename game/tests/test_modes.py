@@ -2,7 +2,7 @@ import math
 
 from django.test import SimpleTestCase
 
-from game import world
+from game import bots, world
 from game.engine import (
     BOMB_TIME, DEFUSE_TIME, DEFUSE_TIME_KIT, FREEZE_TIME, GRENADES, GUNGAME_LADDER, PLANT_TIME,
     ROUND_END_TIME, Grenade, Room,
@@ -371,7 +371,7 @@ class FreeForAllTests(SimpleTestCase):
 
     def test_spawns_use_whole_map_and_face_center(self):
         points = set(self.room._spawn_points(self.a))
-        self.assertEqual(points, set(self.room.map.spawns[0] + self.room.map.spawns[1]))
+        self.assertEqual(points, set(self.room.map.ffa_spawns))  # по всей карте, а не у двух баз
         self.room._place_at_spawn(self.a)
         d = (-math.sin(self.a.yaw), -math.cos(self.a.yaw))
         self.assertGreater(d[0] * -self.a.x + d[1] * -self.a.z, 0)
@@ -448,3 +448,59 @@ class BotObjectiveTests(SimpleTestCase):
                 break
         self.assertGreater(planted, 0)
         self.assertGreater(defused + exploded, 0)
+
+
+class FreeForAllSpawnTests(SimpleTestCase):
+    def test_spawns_are_spread_over_the_whole_map(self):
+        for game_map in world.MAPS.values():
+            points = game_map.ffa_spawns
+            self.assertEqual(len(points), world.FFA_SPAWNS, game_map.id)
+            closest = min(math.dist(a, b) for i, a in enumerate(points) for b in points[i + 1:])
+            self.assertGreater(closest, 12.0, game_map.id)  # никакие две точки не стоят рядом
+            for x, z in points:
+                for y in (0.1, 1.0, 1.7):
+                    self.assertFalse(game_map.point_inside(x, y, z, 0.4), (game_map.id, x, z))
+            # Есть точки и на западе, и на востоке, и на севере, и на юге, а не только у баз.
+            self.assertTrue(any(x < -game_map.half_x / 3 for x, _ in points))
+            self.assertTrue(any(x > game_map.half_x / 3 for x, _ in points))
+            self.assertTrue(any(abs(x) < game_map.half_x / 3 for x, _ in points))
+            self.assertTrue(any(z < -game_map.half_z / 3 for _, z in points))
+            self.assertTrue(any(z > game_map.half_z / 3 for _, z in points))
+
+    def test_players_appear_far_from_each_other(self):
+        for mode in ("ffa", "gungame"):
+            room = Room("TEST", mode, None, now=0.0)
+            players = [room.add_player(f"P{i}", 0, f"p{i}", 0.0) for i in range(6)]
+            for p in players:
+                p.alive = False
+            for p in players:
+                room._spawn(p, 1.0)
+            closest = min(math.dist((a.x, a.z), (b.x, b.z)) for i, a in enumerate(players) for b in players[i + 1:])
+            self.assertGreater(closest, 20.0, mode)
+            used_spawns = set(room.map.spawns[0]) | set(room.map.spawns[1])
+            self.assertTrue(any((p.x, p.z) not in used_spawns for p in players), mode)
+
+
+class BotStepTests(SimpleTestCase):
+    def setUp(self):
+        self.room = Room("TEST", "tdm", 30, now=0.0)
+        self.bot = self.room.add_bot(0.0)
+        wall = next(b for b in self.room.map.boxes if b.kind != "perimeter" and b.miny == 0 and b.maxz - b.minz > 6)
+        self.wall = wall
+        # Бот прижат к стене ближе запаса в 0,35 м.
+        self.bot.x, self.bot.z = wall.minx - 0.2, (wall.minz + wall.maxz) / 2
+
+    def test_bot_pressed_to_wall_can_walk_away(self):
+        self.assertTrue(bots._step(self.room, self.bot, -1.0, 0.0, 3.9, 0.05))
+        self.assertLess(self.bot.x, self.wall.minx - 0.2)
+
+    def test_bot_slides_along_wall_instead_of_stopping(self):
+        start_z = self.bot.z
+        self.assertTrue(bots._step(self.room, self.bot, 1.0, 1.0, 3.9, 0.05))
+        self.assertGreater(self.bot.z, start_z)
+        self.assertLessEqual(self.bot.x, self.wall.minx)
+
+    def test_bot_does_not_walk_into_wall(self):
+        for _ in range(40):
+            bots._step(self.room, self.bot, 1.0, 0.0, 3.9, 0.05)
+        self.assertLess(self.bot.x, self.wall.minx)

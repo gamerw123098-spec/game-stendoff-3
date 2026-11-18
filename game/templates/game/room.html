@@ -44,6 +44,19 @@
 
     <div id="buy-note" hidden></div>
 
+    <section id="chat-panel" aria-label="Игровой чат">
+      <div id="chat-log" aria-live="polite"></div>
+      <small id="chat-hint">Enter — открыть чат</small>
+      <form id="chat-form" hidden>
+        <select id="chat-scope" aria-label="Кому отправить сообщение">
+          <option value="all">Всем</option>
+          <option value="team">Команде</option>
+        </select>
+        <input id="chat-input" maxlength="180" autocomplete="off" placeholder="Сообщение...">
+        <button type="submit" aria-label="Отправить">➤</button>
+      </form>
+    </section>
+
     <div id="status">
       <div id="team-badge"></div>
       <div class="wallet" id="wallet"><b id="money">$0</b><span id="money-gain"></span></div>
@@ -216,6 +229,15 @@
           </div>
 
           <h2>Настройки</h2>
+          <label class="check"><input type="checkbox" id="telemetry-consent"> Показывать FPS, заряд батареи и состояние интернета</label>
+          <p class="sub small">Данные видны только вам и не отправляются на сервер. Заряд батареи доступен не во всех браузерах.</p>
+          <section id="touch-layout-settings" hidden>
+            <p class="sub small">Расположите кнопки управления так, как вам удобно.</p>
+            <div class="btn-row">
+              <button id="touch-layout-edit" type="button">Настроить кнопки</button>
+              <button id="touch-layout-reset" type="button">Сбросить расположение</button>
+            </div>
+          </section>
           <label class="range"><span>Чувствительность мыши <output id="sens-value"></output></span>
             <input type="range" id="sens" min="0.2" max="3" step="0.05"></label>
           <label class="range"><span>Громкость <output id="vol-value"></output></span>
@@ -271,6 +293,10 @@
     </section>
   </div>
 
+  <div id="touch-layout-toolbar" hidden>
+    <span>Перетащите кнопки</span>
+    <button id="touch-layout-save" class="primary" type="button">Готово</button>
+  </div>
   {{ config|json_script:"room-config" }}
   <script type="module" src="{% static 'game/game.js' %}"></script>
 </body>

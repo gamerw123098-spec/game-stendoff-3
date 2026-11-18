@@ -279,6 +279,7 @@ class Player:
     hs_kills: int = 0
     damage: int = 0
     assists: int = 0
+    last_chat_at: float = -1e9
     plants: int = 0
     defuses: int = 0
     damage_from: dict = field(default_factory=dict)  # кто сколько урона нанёс за эту жизнь
@@ -647,6 +648,88 @@ class Room:
         p.next_shot = max(p.next_shot, now + 0.3)
         return True
 
+    def _shop_quote(self, p: Player, item, now: float):
+        if not isinstance(item, str) or not p.alive or now >= p.buy_until or not self.cfg["shop"]:
+            return None
+        if item in ARMOR_ITEMS:
+            spec = ARMOR_ITEMS[item]
+            return None if p.armor >= spec["level"] else (spec["price"], spec["name"])
+        if item in GRENADES:
+            spec = GRENADES[item]
+            return None if p.grenades.get(item, 0) >= spec["max"] else (spec["price"], spec["name"])
+        if item == "kit":
+            if self.mode != "defuse" or p.team == self.attackers or p.kit:
+                return None
+            return KIT_PRICE, "Набор сапёра"
+        weapon = WEAPONS.get(item)
+        if weapon is None or weapon["slot"] in ("melee", "bomb") or item in self.owned(p):
+            return None
+        return weapon["price"], weapon["name"]
+
+    def chat(self, pid: int, text, now: float, team_only: bool = False):
+        p = self.players.get(pid)
+        if p is None or p.is_bot or not isinstance(text, str) or now - p.last_chat_at < 0.6:
+            return False
+        text = "".join(ch for ch in text.strip() if ch.isprintable())[:180]
+        if not text:
+            return False
+        p.last_chat_at = now
+        message = {"t": "chat", "id": p.id, "name": p.name, "text": text,
+                   "team": bool(team_only and not self.cfg["ffa"]), "side": p.team}
+        if message["team"]:
+            for recipient in self.players.values():
+                if recipient.team == p.team and recipient.channel:
+                    self._emit(message, recipient.channel)
+        else:
+            self._emit(message)
+        return True
+
+    def request_buy(self, pid: int, item, now: float):
+        p = self.players.get(pid)
+        quote = self._shop_quote(p, item, now) if p else None
+        if p is None or p.is_bot or quote is None or p.money >= quote[0] or now - p.last_chat_at < 0.6:
+            return False
+        p.last_chat_at = now
+        message = {"t": "chat", "kind": "request", "id": p.id, "name": p.name,
+                   "item": item, "itemName": quote[1], "price": quote[0], "side": p.team}
+        for recipient in self.players.values():
+            if recipient.id != p.id and recipient.team == p.team and recipient.channel:
+                self._emit(message, recipient.channel)
+        return True
+
+    def gift_buy(self, buyer_id: int, recipient_id, item, now: float):
+        if type(recipient_id) is not int:
+            return False
+        buyer, recipient = self.players.get(buyer_id), self.players.get(recipient_id)
+        if (buyer is None or recipient is None or buyer.id == recipient.id or buyer.team != recipient.team
+                or not buyer.alive or now >= buyer.buy_until or not self.cfg["shop"]):
+            return False
+        quote = self._shop_quote(recipient, item, now)
+        if quote is None or recipient.money >= quote[0] or buyer.money < quote[0]:
+            return False
+        price, title = quote
+        buyer.money -= price
+        if item in ARMOR_ITEMS:
+            recipient.armor = ARMOR_ITEMS[item]["level"]
+        elif item in GRENADES:
+            recipient.grenades[item] = recipient.grenades.get(item, 0) + 1
+        elif item == "kit":
+            recipient.kit = True
+        else:
+            weapon = WEAPONS[item]
+            if weapon["slot"] == "primary":
+                recipient.primary = item
+            else:
+                recipient.secondary = item
+            recipient.ammo[item] = weapon["mag"]
+            recipient.weapon = item
+            recipient.reload_until = 0.0
+            recipient.next_shot = max(recipient.next_shot, now + 0.3)
+        self._emit({"t": "chat", "kind": "bought", "id": buyer.id, "name": buyer.name,
+                    "target": recipient.id, "targetName": recipient.name,
+                    "itemName": title, "price": price})
+        return True
+
     def affordable_primaries(self, p: Player) -> list[str]:
         return [k for k, w in WEAPONS.items() if w["slot"] == "primary" and w["price"] <= p.money]
 
@@ -691,7 +774,7 @@ class Room:
 
     def _spawn_points(self, p: Player) -> list:
         if self.cfg["ffa"]:
-            return self.map.spawns[0] + self.map.spawns[1]
+            return self.map.ffa_spawns  # разбросаны по всей карте, а не у двух баз
         return self.map.spawns[self.side(p.team)]
 
     def _pick_spawn(self, p: Player):
@@ -1214,6 +1297,12 @@ class Room:
             self.switch_weapon(p, msg.get("w"), now)
         elif kind == "buy":
             self.try_buy(p, msg.get("item"), now)
+        elif kind == "chat":
+            self.chat(pid, msg.get("text"), now, bool(msg.get("team")))
+        elif kind == "buy_request":
+            self.request_buy(pid, msg.get("item"), now)
+        elif kind == "buy_gift":
+            self.gift_buy(pid, msg.get("target"), msg.get("item"), now)
         elif kind == "shop":
             self._shop_state(p, bool(msg.get("open")), now)
         elif kind == "team":

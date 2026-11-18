@@ -61,11 +61,21 @@ def _step(room, bot, dx, dz, speed, dt, pad=0.35) -> bool:
     nx = bot.x + dx / length * speed * dt
     nz = bot.z + dz / length * speed * dt
     game_map = room.map
-    if game_map.point_inside(nx, 0.5, nz, pad) or game_map.point_inside(nx, 1.0, nz, pad):
-        return False
-    bot.x, bot.z = nx, nz
-    bot.speed = speed
-    return True
+    # Бот, уже прижатый к стене ближе запаса, должен суметь от неё отойти:
+    # иначе любой шаг считается упором, и он стоит до конца матча.
+    if not _free(game_map, bot.x, bot.z, pad):
+        pad = 0.05
+    # Сначала прямо, потом скольжением вдоль стены: так бот не застревает в углах.
+    for mx, mz in ((nx, nz), (nx, bot.z), (bot.x, nz)):
+        if (mx, mz) != (bot.x, bot.z) and _free(game_map, mx, mz, pad):
+            bot.x, bot.z = mx, mz
+            bot.speed = speed
+            return True
+    return False
+
+
+def _free(game_map, x, z, pad) -> bool:
+    return not (game_map.point_inside(x, 0.5, z, pad) or game_map.point_inside(x, 1.0, z, pad))
 
 
 def _engage(room, bot, target, now, dt):
