@@ -41,6 +41,7 @@ def _catalog() -> dict:
         "skins": SKINS,
         "rarities": RARITIES,
         "weapons": {key: weapon["name"] for key, weapon in WEAPONS.items()},
+        "weaponTypes": {key: weapon["cat"] for key, weapon in WEAPONS.items()},
         "order": WEAPON_ORDER,
         "goldPrices": profiles.SKIN_GOLD_PRICE,
         "sprays": profiles.SPRAYS,

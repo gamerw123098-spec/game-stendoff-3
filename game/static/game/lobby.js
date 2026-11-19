@@ -274,3 +274,81 @@ $('nick-form').addEventListener('submit', (event) => {
   $('nick-saved').hidden = false;
   setTimeout(() => { $('nick-saved').hidden = true; }, 1500);
 });
+
+function renderProfileHistory(profile) {
+  const stats = document.querySelector('.profile-stats');
+  if (stats) {
+    for (const [id, label] of [['profile-played', '\u041c\u0430\u0442\u0447\u0438'], ['profile-losses', '\u041f\u043e\u0440\u0430\u0436\u0435\u043d\u0438\u044f']]) {
+      if (!$(id)) { const cell = document.createElement('div'); const value = document.createElement('b'); value.id = id; value.textContent = '0'; const caption = document.createElement('small'); caption.textContent = label; cell.append(value, caption); stats.append(cell); }
+    }
+  }
+  const matches = $('match-history');
+  if (matches) {
+    matches.replaceChildren();
+    if (!profile?.recentMatches?.length) {
+      const empty = document.createElement('p'); empty.className = 'sub-line'; empty.textContent = '\u0417\u0430\u0432\u0435\u0440\u0448\u0451\u043d\u043d\u044b\u0445 \u043c\u0430\u0442\u0447\u0435\u0439 \u043f\u043e\u043a\u0430 \u043d\u0435\u0442.'; matches.append(empty);
+    } else profile.recentMatches.forEach((match) => {
+      const row = document.createElement('article'); row.className = `history-row ${match.result === 'L' ? 'loss' : match.result === 'D' ? 'draw' : ''}`;
+      const modes = { tdm: '\u041a\u043e\u043c\u0430\u043d\u0434\u043d\u044b\u0439 \u0431\u043e\u0439', rounds: '\u0420\u0430\u0443\u043d\u0434\u044b', defuse: '\u041e\u0431\u0435\u0437\u0432\u0440\u0435\u0436\u0438\u0432\u0430\u043d\u0438\u0435', ffa: '\u041a\u0430\u0436\u0434\u044b\u0439 \u0437\u0430 \u0441\u0435\u0431\u044f', gungame: '\u0413\u043e\u043d\u043a\u0430 \u0432\u043e\u043e\u0440\u0443\u0436\u0435\u043d\u0438\u0439' };
+      const title = document.createElement('b'); title.textContent = `${modes[match.mode] || match.mode} / ${match.map}`;
+      const result = document.createElement('span'); result.className = 'history-result'; result.textContent = match.result === 'W' ? '\u041f\u041e\u0411\u0415\u0414\u0410' : match.result === 'L' ? '\u041f\u041e\u0420\u0410\u0416\u0415\u041d\u0418\u0415' : '\u041d\u0418\u0427\u042c\u042f';
+      const kda = document.createElement('small'); kda.textContent = `\u0423/\u0421/\u041f ${match.kills}/${match.deaths}/${match.assists}`;
+      row.append(title, result, kda); matches.append(row);
+    });
+  }
+  const drops = $('drop-history');
+  if (drops) {
+    drops.replaceChildren();
+    if (!profile?.recentDrops?.length) {
+      const empty = document.createElement('p'); empty.className = 'sub-line'; empty.textContent = '\u041e\u0442\u043a\u0440\u044b\u0442\u044b\u0445 \u043a\u0435\u0439\u0441\u043e\u0432 \u043f\u043e\u043a\u0430 \u043d\u0435\u0442.'; drops.append(empty);
+    } else profile.recentDrops.forEach((drop) => {
+      const row = document.createElement('article'); row.className = 'history-row';
+      const title = document.createElement('b'); title.textContent = `${drop.type === 'spray' ? '\u0421\u043f\u0440\u0435\u0439' : '\u0421\u043a\u0438\u043d'} / ${drop.name || drop.id}`;
+      const source = document.createElement('small'); source.textContent = `\u041a\u0435\u0439\u0441: ${drop.case}`;
+      const time = document.createElement('small'); time.textContent = new Date(drop.date).toLocaleDateString('ru-RU');
+      row.append(title, time, source); drops.append(row);
+    });
+  }
+  const played = $('profile-played'); if (played) played.textContent = profile?.matchesPlayed ?? 0;
+  const losses = $('profile-losses'); if (losses) losses.textContent = profile?.matchesLost ?? 0;
+}
+window.addEventListener('poligon:profile', (event) => renderProfileHistory(event.detail));
+loadProfile().then(renderProfileHistory);
+
+const volumeSetting = $('volume-setting');
+const qualitySetting = $('quality-setting');
+const scaleSetting = $('ui-scale-setting');
+const fullscreenSetting = $('fullscreen-setting');
+if (volumeSetting) {
+  let volume = 0.5;
+  try { volume = Number(localStorage.getItem('poligon.volume') ?? 0.5); } catch { /* use default */ }
+  volumeSetting.value = String(Math.max(0, Math.min(1, volume)));
+  $('volume-label').textContent = `${Math.round(Number(volumeSetting.value) * 100)}%`;
+  volumeSetting.addEventListener('input', () => {
+    const value = Number(volumeSetting.value);
+    $('volume-label').textContent = `${Math.round(value * 100)}%`;
+    try { localStorage.setItem('poligon.volume', String(value)); } catch { /* session preference */ }
+  });
+}
+if (qualitySetting) {
+  let quality = 'medium';
+  try { quality = localStorage.getItem('poligon.quality') || quality; } catch { /* use default */ }
+  qualitySetting.value = ['low', 'medium', 'high'].includes(quality) ? quality : 'medium';
+  qualitySetting.addEventListener('change', () => { try { localStorage.setItem('poligon.quality', qualitySetting.value); } catch { /* session preference */ } });
+}
+if (scaleSetting) {
+  let scale = '1';
+  try { scale = localStorage.getItem('poligon.uiScale') || scale; } catch { /* use default */ }
+  scaleSetting.value = ['0.9', '1', '1.1'].includes(scale) ? scale : '1';
+  document.documentElement.style.setProperty('--ui-scale', scaleSetting.value);
+  scaleSetting.addEventListener('change', () => {
+    document.documentElement.style.setProperty('--ui-scale', scaleSetting.value);
+    try { localStorage.setItem('poligon.uiScale', scaleSetting.value); } catch { /* session preference */ }
+  });
+}
+fullscreenSetting?.addEventListener('click', async () => {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await document.documentElement.requestFullscreen();
+  } catch { /* browser or device does not allow fullscreen */ }
+});

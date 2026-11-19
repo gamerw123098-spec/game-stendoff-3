@@ -936,6 +936,8 @@ function onBombEvent(msg) {
   if (msg.ev === 'planted') {
     showBanner(`Бомба на точке ${msg.site}!`, me.team === state.attackers ? 'Защищайте её' : `Обезвредьте её: удерживайте ${ACTION_NAME} рядом`, 2.5);
     sfx.beep(true);
+  } else if (msg.ev === 'defused') {
+    sfx.defuse();
   } else if (msg.ev === 'dropped' && me.team === state.attackers) {
     showToast('Бомба упала. Подберите её');
   } else if (msg.ev === 'picked' && msg.id === state.myId) {
@@ -1101,6 +1103,11 @@ function buildHostSettings() {
     sfx.click();
     send({ t: 'start' });
   });
+  $('wait-ready')?.addEventListener('click', () => {
+    sfx.unlock(); sfx.click();
+    const self = state.roster.get(state.myId);
+    send({ t: 'ready', ready: !self?.ready });
+  });
   $('set-bot-add').addEventListener('click', () => send({ t: 'bot', op: 'add' }));
   $('set-bot-remove').addEventListener('click', () => send({ t: 'bot', op: 'remove' }));
   document.querySelectorAll('[data-wait-team]').forEach((button) => {
@@ -1144,6 +1151,7 @@ function renderWaiting() {
       const name = document.createElement('span');
       name.textContent = player.name;
       item.append(name);
+      if (!player.bot) item.append(badge(player.ready ? 'готов' : 'ожидает', player.ready ? 'ready' : ''));
       if (player.id === state.hostId) item.append(badge('ведущий', 'host'));
       if (player.id === state.myId) item.append(badge('вы', 'me'));
       if (player.bot) item.append(badge('бот', 'bot'));
@@ -1177,6 +1185,13 @@ function renderWaiting() {
   $('start-hint').textContent = lonelyTeam
     ? 'В этом режиме нужны обе команды: позовите друга или добавьте бота'
     : '';
+  const readyButton = $('wait-ready');
+  if (readyButton) {
+    const self = state.roster.get(state.myId);
+    readyButton.hidden = state.phase !== 'lobby';
+    readyButton.textContent = self?.ready ? 'Не готов' : 'Готов';
+    readyButton.setAttribute('aria-pressed', String(!!self?.ready));
+  }
   $('mode-rules').textContent = w.modeText;
 }
 

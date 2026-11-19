@@ -82,6 +82,13 @@ async def _grant_rewards(room: Room):
 
 async def flush(room: Room):
     layer = get_channel_layer()
+    if room.pending_match_records:
+        rows = room.pending_match_records
+        try:
+            await database_sync_to_async(profiles.record_matches)(rows)
+            room.pending_match_records = []
+        except Exception:
+            log.exception("Не удалось сохранить историю матча в комнате %s", room.code)
     if room.pending_rewards:
         await _grant_rewards(room)
     for channel, msg in room.drain():

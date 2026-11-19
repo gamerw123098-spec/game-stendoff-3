@@ -34,3 +34,31 @@ class MarketListing(models.Model):
     price = models.PositiveIntegerField()
     active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class MatchRecord(models.Model):
+    """A durable per-profile summary of a finished match."""
+
+    profile = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="match_records")
+    match_key = models.CharField(max_length=32)
+    mode = models.CharField(max_length=24)
+    map_name = models.CharField(max_length=32)
+    result = models.CharField(max_length=1, choices=(("W", "Win"), ("L", "Loss"), ("D", "Draw")))
+    kills = models.PositiveIntegerField(default=0)
+    deaths = models.PositiveIntegerField(default=0)
+    assists = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=("profile", "match_key"), name="uniq_profile_match_record")]
+        ordering = ("-created_at",)
+
+
+class CaseReward(models.Model):
+    """History of actual rewards issued by the server's case-opening flow."""
+
+    profile = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="case_rewards")
+    case_type = models.CharField(max_length=12)
+    reward_type = models.CharField(max_length=8)
+    reward_id = models.CharField(max_length=32)
+    created_at = models.DateTimeField(auto_now_add=True)

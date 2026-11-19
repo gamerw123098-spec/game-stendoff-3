@@ -8,7 +8,7 @@ from collections import Counter
 from django.db import transaction
 from django.db.models import F
 
-from .models import Item, MarketListing, Profile
+from .models import CaseReward, Item, MarketListing, MatchRecord, Profile
 from .skins import SKINS, roll_skin
 
 CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
@@ -53,6 +53,8 @@ def payload(profile: Profile) -> dict:
         if listed_counts[skin]:
             item["listed"] = min(count, listed_counts[skin])
         items.append(item)
+    matches = list(profile.match_records.order_by("-created_at")[:10])
+    drops = list(profile.case_rewards.order_by("-created_at")[:10])
     return {
         "code": profile.code,
         "nick": profile.nick,
@@ -62,6 +64,15 @@ def payload(profile: Profile) -> dict:
         "standardCases": profile.standard_cases,
         "premiumCases": profile.premium_cases,
         "wins": profile.wins,
+        "matchesPlayed": profile.match_records.count(),
+        "matchesLost": profile.match_records.filter(result="L").count(),
+        "recentMatches": [{"mode": m.mode, "map": m.map_name, "result": m.result,
+                           "kills": m.kills, "deaths": m.deaths, "assists": m.assists,
+                           "date": m.created_at.isoformat()} for m in matches],
+        "recentDrops": [{"type": d.reward_type, "id": d.reward_id,
+                         "name": SPRAYS.get(d.reward_id, d.reward_id) if d.reward_type == "spray" else SKINS.get(d.reward_id, {}).get("name", d.reward_id),
+                         "case": d.case_type,
+                         "date": d.created_at.isoformat()} for d in drops],
         "equipped": profile.equipped,
         "items": items,
         "sprays": sorted({"smile", *[s for s in profile.sprays if s in SPRAYS]}),
@@ -117,6 +128,8 @@ def open_case(profile: Profile, case_type: str = "free") -> dict | None:
         else:
             profile.sprays = sorted({"smile", *profile.sprays, reward["id"]})
             profile.save(update_fields=["sprays"])
+        CaseReward.objects.create(profile=profile, case_type=case_type,
+                                  reward_type=reward["type"], reward_id=reward["id"])
     profile.refresh_from_db()
     return reward
 
@@ -227,3 +240,13 @@ def grant_wins(profile_ids: list[int]) -> None:
         cases=F("cases") + 1, wins=F("wins") + 1,
         credits=F("credits") + 100, gold=F("gold") + 25,
     )
+
+
+def record_matches(rows: list[dict]) -> None:
+    """Store finished-match summaries once; retries are safe via the unique match key."""
+    MatchRecord.objects.bulk_create([
+        MatchRecord(profile_id=row["profile_id"], match_key=row["match_key"], mode=row["mode"],
+                    map_name=row["map_name"], result=row["result"], kills=row["kills"],
+                    deaths=row["deaths"], assists=row["assists"])
+        for row in rows
+    ], ignore_conflicts=True)

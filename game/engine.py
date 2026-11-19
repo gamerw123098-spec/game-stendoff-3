@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import math
 import random
+import uuid
 from collections import deque
 from dataclasses import dataclass, field
 
@@ -235,6 +236,7 @@ class Player:
     team: int
     channel: str | None = None
     is_bot: bool = False
+    ready: bool = False
     x: float = 0.0
     y: float = 0.0
     z: float = 0.0
@@ -351,6 +353,9 @@ class Room:
         self.history: deque = deque()
         self.outbox: list = []
         self.pending_rewards: list[tuple[int, int]] = []  # (id игрока, id профиля)
+        self.pending_match_records: list[dict] = []
+        self.match_instance = uuid.uuid4().hex[:12]
+        self.match_number = 0
         self._next_id = 1
         self._next_grenade = 1
         self._last_tick = now
@@ -449,7 +454,7 @@ class Room:
             "t": "roster",
             "players": [
                 {"id": p.id, "name": p.name, "team": p.team, "k": p.kills, "d": p.deaths,
-                 "a": p.assists, "bot": p.is_bot, "skins": p.skins}
+                 "a": p.assists, "bot": p.is_bot, "ready": p.ready, "skins": p.skins}
                 for p in self.players.values()
             ],
             "host": self.host_id,
@@ -1307,6 +1312,9 @@ class Room:
             self._shop_state(p, bool(msg.get("open")), now)
         elif kind == "team":
             self.change_team(p, msg.get("team"), now)
+        elif kind == "ready" and self.phase == "lobby":
+            p.ready = bool(msg.get("ready"))
+            self._emit_roster()
         elif kind == "bot":
             # Ботами управляет ведущий, чтобы игроки не мешали друг другу.
             if not self._is_host(p):
@@ -1342,6 +1350,19 @@ class Room:
     def _finish_match(self, winner: int, now: float, champion: Player | None = None):
         self.winner = winner
         self.champion = champion.name if champion else ""
+        self.match_number += 1
+        match_key = f"{self.code}-{self.match_instance}-{self.match_number}"
+        self.pending_match_records = []
+        for player in self.players.values():
+            if not player.profile_id or player.is_bot:
+                continue
+            won = player.id == champion.id if champion else player.team == winner
+            result = "W" if won else ("D" if winner == -1 else "L")
+            self.pending_match_records.append({
+                "profile_id": player.profile_id, "match_key": match_key,
+                "mode": self.mode, "map_name": self.map.name, "result": result,
+                "kills": player.kills, "deaths": player.deaths, "assists": player.assists,
+            })
         if champion:
             # Победитель в режиме «все против всех» один.
             self.pending_rewards = [(champion.id, champion.profile_id)] if champion.profile_id else []
@@ -1394,6 +1415,7 @@ class Room:
         self.attackers = 0
         self._clear_field()
         for p in self.players.values():
+            p.ready = False
             p.reset_stats()
             p.alive = False
             self._reset_economy(p)

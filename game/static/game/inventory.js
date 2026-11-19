@@ -140,7 +140,9 @@ function filteredSkins(ids) {
   const search = $('inventory-search')?.value.trim().toLocaleLowerCase('ru') || '';
   const rarity = $('inventory-rarity')?.value || '';
   const sort = $('inventory-sort')?.value || 'rarity';
+  const category = $('inventory-category')?.value || '';
   skins = skins.filter((skin) => (!rarity || skin.rarity === rarity)
+    && (!category || catalog.weaponTypes?.[skin.weapon] === category)
     && (!search || `${skin.name} ${catalog.weapons[skin.weapon]}`.toLocaleLowerCase('ru').includes(search)));
   if (sort === 'name') skins.sort((a, b) => a.name.localeCompare(b.name, 'ru'));
   if (sort === 'weapon') skins.sort((a, b) => catalog.weapons[a.weapon].localeCompare(catalog.weapons[b.weapon], 'ru'));
@@ -477,6 +479,16 @@ if ($('inventory-rarity')) {
   ['inventory-search', 'inventory-rarity', 'inventory-sort'].forEach((id) => $(id).addEventListener('input', () => profile && render()));
   $('inventory-rarity').addEventListener('change', () => profile && render());
   $('inventory-sort').addEventListener('change', () => profile && render());
+}
+if ($('inventory-search')) {
+  const category = document.createElement('label');
+  category.textContent = 'Категория ';
+  const select = document.createElement('select'); select.id = 'inventory-category';
+  select.append(new Option('Все виды оружия', ''));
+  const names = { pistol: 'Пистолеты', smg: 'Пистолеты-пулемёты', shotgun: 'Дробовики', rifle: 'Автоматы', sniper: 'Снайперские винтовки', mg: 'Пулемёты', knife: 'Ножи', bomb: 'Другое' };
+  [...new Set(Object.values(catalog.weaponTypes || {}))].forEach((type) => select.append(new Option(names[type] || type, type)));
+  category.append(select); $('inventory-search').closest('.inventory-tools').append(category);
+  select.addEventListener('change', () => profile && render());
 }
 $('result-close').addEventListener('click', () => { $('roulette').hidden = true; });
 $('result-equip').addEventListener('click', async () => {

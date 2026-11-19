@@ -25,6 +25,16 @@ const WEAPON_SOUNDS = {
   lmg: { crack: 2400, body: 700, thump: 68, gain: 0.66, length: 0.26, mech: 'tick' },
 };
 
+const SHOT_SAMPLES = {
+  pistol: 'pistol-shot', tac_pistol: 'pistol-shot', auto_pistol: 'pistol-shot',
+  magnum: 'pistol-shot', heavy_pistol: 'pistol-shot',
+  shotgun: 'shot-heavy', auto_shotgun: 'shot-heavy',
+  rifle: 'rifle-shot', carbine: 'rifle-shot', bullpup: 'rifle-shot',
+  battle: 'rifle-shot', dmr: 'rifle-shot',
+  smg: 'shot-variant', smg2: 'shot-variant', pdw: 'shot-variant', lmg: 'shot-variant',
+  sniper: 'shot-variant', heavy_sniper: 'shot-variant',
+};
+
 const RELOADS = {
   // Последовательность звуков перезарядки по времени (секунды)
   rifle: [[0.25, 'magOut'], [1.3, 'magIn'], [1.85, 'bolt']],
@@ -89,6 +99,34 @@ export class Sfx {
     this.noise = this.ctx.createBuffer(1, length, this.ctx.sampleRate);
     const data = this.noise.getChannelData(0);
     for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+    this.samples = {};
+    this.loadSamples();
+  }
+
+  async loadSamples() {
+    const files = [
+      ['rifle-shot', 'rifle-shot.mp3'], ['shot-variant', 'shot-variant.mp3'],
+      ['pistol-shot', 'pistol-shot.mp3'], ['shot-heavy', 'shot-heavy.mp3'],
+      ['bomb-explosion', 'bomb-explosion.mp3'], ['bomb-defuse', 'bomb-defuse.mp3'],
+      ['footstep', 'footstep.ogg'],
+    ];
+    await Promise.all(files.map(async ([name, filename]) => {
+      try {
+        const response = await fetch(`/static/game/sounds/${filename}`);
+        if (!response.ok) return;
+        this.samples[name] = await this.ctx.decodeAudioData(await response.arrayBuffer());
+      } catch { /* use synthesized fallback if an asset cannot be decoded */ }
+    }));
+  }
+
+  playSample(name, gain, distance, pan) {
+    const buffer = this.samples?.[name];
+    if (!buffer || !this.ctx) return false;
+    const source = this.ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(this._bus(gain, { distance, pan, wet: 0.18 }));
+    source.start();
+    return true;
   }
 
   _impulse(seconds, decay) {
@@ -238,6 +276,13 @@ export class Sfx {
       this.knife(distance, pan);
       return;
     }
+    const sample = SHOT_SAMPLES[kind] || 'rifle-shot';
+    if (this.playSample(sample, sound.gain * 0.32, distance, pan)) {
+      if (distance < 6 && sound.mech && sound.mech !== 'none') {
+        this._mech(this._bus(0.16, { distance, pan, wet: 0.03 }), sound.mech, 0.04);
+      }
+      return;
+    }
     const out = this._bus(sound.gain * (0.92 + Math.random() * 0.16), { distance, pan, wet: sound.quiet ? 0.05 : 0.22 });
     const vary = 0.94 + Math.random() * 0.12;
     if (sound.quiet) {
@@ -299,11 +344,18 @@ export class Sfx {
   // ---------- Шаги и движение ----------
   step(distance, pan, loud = 1) {
     if (!this.ctx || distance > 26) return;
+    if (this.playSample('footstep', 0.32 * loud, distance, pan)) return;
     const out = this._bus(0.32 * loud, { distance, pan, wet: 0.05 });
     const vary = 0.85 + Math.random() * 0.3;
     // Пятка и подошва
     this._noise(out, { type: 'lowpass', freq: 380 * vary, length: 0.06, gain: 1 });
     this._noise(out, { freq: 2200 * vary, q: 1.2, length: 0.05, gain: 0.35, delay: 0.025 });
+  }
+
+  defuse() {
+    if (!this.ctx) return;
+    if (this.playSample('bomb-defuse', 0.8, 0, 0)) return;
+    this.beep(true);
   }
 
   land() {
@@ -399,6 +451,7 @@ export class Sfx {
 
   boom(kind, distance = 0, pan = 0) {
     if (!this.ctx) return;
+    if (kind === 'bomb' && this.playSample('bomb-explosion', 1.1, distance, pan)) return;
     if (kind === 'smoke') {
       const out = this._bus(0.35, { distance, pan, wet: 0.1 });
       this._mech(out, 'click');
