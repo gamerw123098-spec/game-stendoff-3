@@ -1,6 +1,6 @@
 // Клиент: подключение к серверу, управление, плавное движение других игроков и интерфейс.
 import * as THREE from 'three';
-import { Sfx } from './audio.js';
+import { Sfx } from './audio.js?v=soundfix5';
 import { loadProfile } from './profile.js';
 import { Battlefield, Effects, Impacts, PlayerModel, SprayLayer, ViewModel, buildWorld } from './scene.js';
 import { chosenSpray } from './sprays.js';
@@ -457,7 +457,7 @@ function onSpawn(msg) {
 function ensureRemote(id) {
   let remote = state.remotes.get(id);
   if (!remote) {
-    remote = { buffer: [], model: null, view: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, speed: 0, crouch: false, alive: true }, lastX: 0, lastZ: 0, stepPhase: 0 };
+    remote = { buffer: [], model: null, view: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, speed: 0, crouch: false, alive: true }, lastX: 0, lastZ: 0, stepPhase: 0, actKind: 0 };
     state.remotes.set(id, remote);
   }
   return remote;
@@ -527,6 +527,17 @@ function onSnapshot(s) {
     remote.weaponKind = state.weapons.order[p[F.WEAPON]];
     remote.protected = !!p[F.PROT];
     remote.reloading = !!p[F.RELOAD];
+    const actionKind = p[F.ACT];
+    if (actionKind !== remote.actKind) {
+      if (actionKind) {
+        const dx = id === state.myId ? 0 : p[F.X] - me.x;
+        const dz = id === state.myId ? 0 : p[F.Z] - me.z;
+        sfx.startBombAction(id, actionKind, Math.hypot(dx, dz), id === state.myId ? 0 : panFor(dx, dz));
+      } else {
+        sfx.stopBombAction(id);
+      }
+      remote.actKind = actionKind;
+    }
     remote.buffer.push({ ts: s.ts, x: p[F.X], y: p[F.Y], z: p[F.Z], yaw: p[F.YAW], pitch: p[F.PITCH], crouch: !!p[F.CROUCH] });
     if (remote.buffer.length > 30) remote.buffer.shift();
 
@@ -581,6 +592,7 @@ function onSnapshot(s) {
   }
   for (const [id, remote] of state.remotes) {
     if (!seen.has(id)) {
+      sfx.stopBombAction(id);
       if (remote.model) remote.model.dispose();
       state.remotes.delete(id);
     }
@@ -937,7 +949,7 @@ function onBombEvent(msg) {
     showBanner(`Бомба на точке ${msg.site}!`, me.team === state.attackers ? 'Защищайте её' : `Обезвредьте её: удерживайте ${ACTION_NAME} рядом`, 2.5);
     sfx.beep(true);
   } else if (msg.ev === 'defused') {
-    sfx.defuse();
+    // The sound starts on the first snapshot that reports the held-E action.
   } else if (msg.ev === 'dropped' && me.team === state.attackers) {
     showToast('Бомба упала. Подберите её');
   } else if (msg.ev === 'picked' && msg.id === state.myId) {

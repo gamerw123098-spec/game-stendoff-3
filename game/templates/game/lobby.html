@@ -57,7 +57,7 @@
         <form id="join-form" class="enter-form">
           <label class="field">
             <span>Ваш ник</span>
-            <input id="nick" maxlength="16" autocomplete="off" placeholder="Например, Аня" required>
+            <input id="nick" maxlength="16" autocomplete="nickname" placeholder="Например, Аня" value="{{ nick }}" required>
           </label>
           <label class="field">
             <span>Код игры (спросите у ведущего)</span>
@@ -74,6 +74,7 @@
           <p class="hint-line">Вы станете ведущим: получите код для друзей и начнёте матч, когда все соберутся.</p>
           <form method="post" action="{% url 'create' %}" id="create-form">
             {% csrf_token %}
+            <input type="hidden" id="create-nick" name="nick" value="{{ nick }}">
             <fieldset class="modes">
               <legend>Режим (можно поменять потом)</legend>
               {% for mode in modes %}
@@ -225,6 +226,6 @@
   </div>
 
   {{ catalog|json_script:"catalog" }}
-  <script type="module" src="{% static 'game/lobby.js' %}?v=02c5631"></script>
+  <script type="module" src="{% static 'game/lobby.js' %}?v=nickfix1"></script>
 </body>
 </html>

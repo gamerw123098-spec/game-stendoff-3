@@ -55,6 +55,8 @@ async def lobby(request):
         "catalog": _catalog(),
         "base_url": _base_url(request),
         "missing": request.GET.get("missing", "")[:8],
+        # Keep the player's name when a stale/expired room sends them back.
+        "nick": request.GET.get("nick", "")[:16],
         "full": "full" in request.GET,
         "modes": [
             {"id": key, "name": mode["name"], "text": mode["text"],
@@ -87,7 +89,7 @@ async def create(request):
 async def room(request, code):
     handle = rooms.get_handle(code)
     if handle is None:
-        return redirect(f"{reverse('lobby')}?{urlencode({'missing': code[:8]})}")
+        return redirect(f"{reverse('lobby')}?{urlencode({'missing': code[:8], 'nick': request.GET.get('nick', '')[:16]})}")
     room_obj = handle.room
     return render(request, "game/room.html", {
         "code": room_obj.code,

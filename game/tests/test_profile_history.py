@@ -21,6 +21,14 @@ class DurableHistoryTests(TestCase):
         self.assertContains(room_page, '"nick": "TestPlayer"')
         rooms.ROOMS.pop(code, None)
 
+    def test_expired_room_returns_player_to_lobby_with_nickname(self):
+        response = self.client.get("/room/GONE/?nick=TestPlayer")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("missing=GONE", response["Location"])
+        self.assertIn("nick=TestPlayer", response["Location"])
+        lobby = self.client.get(response["Location"])
+        self.assertContains(lobby, 'value="TestPlayer"')
+
     def test_lobby_shows_persisted_settings_and_profile_history_surfaces(self):
         response = Client().get("/")
         self.assertEqual(response.status_code, 200)

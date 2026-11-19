@@ -48,9 +48,11 @@ function remember(key, value) {
 
 const nickInput = $('nick');
 try {
-  nickInput.value = localStorage.getItem('poligon.nick') || '';
+  const urlNick = new URLSearchParams(location.search).get('nick');
+  nickInput.value = (urlNick || localStorage.getItem('poligon.nick') || '').slice(0, 16);
+  if (urlNick) localStorage.setItem('poligon.nick', nickInput.value);
 } catch {
-  nickInput.value = '';
+  nickInput.value = nickInput.value || '';
 }
 
 // ---------- Вход по коду ----------
@@ -116,14 +118,7 @@ $('create-form').addEventListener('submit', (event) => {
   }
   remember('nick', nickInput.value.trim());
   remember('poligon.autojoin', '*');
-  let createNick = $('create-nick');
-  if (!createNick) {
-    createNick = document.createElement('input');
-    createNick.type = 'hidden';
-    createNick.name = 'nick';
-    createNick.id = 'create-nick';
-    event.currentTarget.append(createNick);
-  }
+  const createNick = $('create-nick');
   createNick.value = nickInput.value.trim();
 });
 nickInput.addEventListener('input', () => nickInput.setCustomValidity(''));

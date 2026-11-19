@@ -26,13 +26,13 @@ const WEAPON_SOUNDS = {
 };
 
 const SHOT_SAMPLES = {
-  pistol: 'pistol-shot', tac_pistol: 'pistol-shot', auto_pistol: 'pistol-shot',
-  magnum: 'pistol-shot', heavy_pistol: 'pistol-shot',
-  shotgun: 'shot-heavy', auto_shotgun: 'shot-heavy',
-  rifle: 'rifle-shot', carbine: 'rifle-shot', bullpup: 'rifle-shot',
-  battle: 'rifle-shot', dmr: 'rifle-shot',
-  smg: 'shot-variant', smg2: 'shot-variant', pdw: 'shot-variant', lmg: 'shot-variant',
-  sniper: 'shot-variant', heavy_sniper: 'shot-variant',
+  pistol: 'shot-pistol', tac_pistol: 'shot-pistol', auto_pistol: 'shot-pistol',
+  magnum: 'shot-pistol', heavy_pistol: 'shot-pistol',
+  shotgun: 'shot-shotgun', auto_shotgun: 'shot-shotgun',
+  rifle: 'shot-rifle', carbine: 'shot-rifle', bullpup: 'shot-rifle',
+  battle: 'shot-rifle', dmr: 'shot-rifle',
+  smg: 'shot-rifle', smg2: 'shot-rifle', pdw: 'shot-rifle', lmg: 'shot-rifle',
+  sniper: 'demo-single-shot', heavy_sniper: 'demo-single-shot',
 };
 
 const RELOADS = {
@@ -63,12 +63,13 @@ export class Sfx {
     this.ctx = null;
     this.volume = volume;
     this.muted = false;
+    this.actions = new Map();
   }
 
   /** Браузер разрешает звук только после действия пользователя (клика). */
   unlock() {
     if (this.ctx) {
-      if (this.ctx.state === 'suspended') this.ctx.resume();
+      if (this.ctx.state !== 'running') this.ctx.resume().catch(() => {});
       return;
     }
     const AudioCtor = window.AudioContext || window.webkitAudioContext;
@@ -86,6 +87,17 @@ export class Sfx {
     limiter.release.value = 0.2;
     this.master.connect(limiter);
     limiter.connect(this.ctx.destination);
+
+    // Browsers may suspend an idle audio context (tab switching, power saving).
+    // Resume it on the next real user gesture instead of silently losing SFX.
+    const resume = () => {
+      if (this.ctx?.state !== 'running') this.ctx?.resume().catch(() => {});
+    };
+    window.addEventListener('pointerdown', resume, { passive: true });
+    window.addEventListener('keydown', resume);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) resume();
+    });
 
     // Эхо площадки: импульсная характеристика генерируется из затухающего шума.
     this.reverb = this.ctx.createConvolver();
@@ -105,8 +117,8 @@ export class Sfx {
 
   async loadSamples() {
     const files = [
-      ['rifle-shot', 'rifle-shot.mp3'], ['shot-variant', 'shot-variant.mp3'],
-      ['pistol-shot', 'pistol-shot.mp3'], ['shot-heavy', 'shot-heavy.mp3'],
+      ['shot-rifle', 'shot-rifle.wav'], ['shot-pistol', 'shot-pistol.wav'],
+      ['shot-shotgun', 'shot-shotgun.wav'], ['demo-single-shot', 'demo-single-shot.wav'],
       ['bomb-explosion', 'bomb-explosion.mp3'], ['bomb-defuse', 'bomb-defuse.mp3'],
       ['footstep', 'footstep.ogg'],
     ];
@@ -119,14 +131,45 @@ export class Sfx {
     }));
   }
 
-  playSample(name, gain, distance, pan) {
+  playSample(name, gain, distance, pan, maxDuration = Infinity, playbackRate = 1, wet = 0.18) {
     const buffer = this.samples?.[name];
     if (!buffer || !this.ctx) return false;
     const source = this.ctx.createBufferSource();
+    const envelope = this.ctx.createGain();
+    const duration = Math.min(buffer.duration, maxDuration / playbackRate);
     source.buffer = buffer;
-    source.connect(this._bus(gain, { distance, pan, wet: 0.18 }));
-    source.start();
+    source.playbackRate.value = playbackRate;
+    const bus = this._bus(gain, { distance, pan, wet });
+    source.connect(envelope);
+    envelope.connect(bus);
+    const now = this.ctx.currentTime;
+    const fade = Math.min(0.075, duration * 0.2);
+    envelope.gain.setValueAtTime(1, now);
+    envelope.gain.setValueAtTime(1, now + duration - fade);
+    envelope.gain.linearRampToValueAtTime(0.001, now + duration);
+    source.addEventListener('ended', () => {
+      source.disconnect(); envelope.disconnect();
+      this._releaseBus(bus);
+    }, { once: true });
+    source.start(now, 0, duration);
+    this._holdBus(bus);
     return true;
+  }
+
+  _holdBus(bus) {
+    bus._audioRefs = (bus._audioRefs || 0) + 1;
+    clearTimeout(bus._audioCleanup);
+  }
+
+  _releaseBus(bus) {
+    bus._audioRefs = Math.max(0, (bus._audioRefs || 0) - 1);
+    if (bus._audioRefs) return;
+    bus._audioCleanup = setTimeout(() => {
+      if (bus._audioRefs) return;
+      for (const node of bus._audioNodes || [bus]) {
+        try { node.disconnect(); } catch { /* already disconnected */ }
+      }
+    }, 300);
   }
 
   _impulse(seconds, decay) {
@@ -165,6 +208,7 @@ export class Sfx {
     input.gain.value = gain / (1 + distance / 12);
 
     const muffle = this.ctx.createBiquadFilter();
+    input._audioNodes = [input, muffle];
     muffle.type = 'lowpass';
     muffle.frequency.setValueAtTime(Math.max(900, 18000 / (1 + distance / 6)), t);
     input.connect(muffle);
@@ -172,6 +216,7 @@ export class Sfx {
     let last = muffle;
     if (pan && this.ctx.createStereoPanner) {
       const panner = this.ctx.createStereoPanner();
+      input._audioNodes.push(panner);
       panner.pan.value = Math.max(-1, Math.min(1, pan));
       muffle.connect(panner);
       last = panner;
@@ -180,6 +225,7 @@ export class Sfx {
 
     // Далёкие выстрелы слышны в основном эхом.
     const send = this.ctx.createGain();
+    input._audioNodes.push(send);
     send.gain.value = Math.min(0.9, wet + distance / 60);
     last.connect(send);
     send.connect(this.reverb);
@@ -202,6 +248,11 @@ export class Sfx {
     source.connect(filter);
     filter.connect(env);
     env.connect(out);
+    this._holdBus(out);
+    source.addEventListener('ended', () => {
+      source.disconnect(); filter.disconnect(); env.disconnect();
+      this._releaseBus(out);
+    }, { once: true });
     source.start(t, Math.random() * 1.5, length + 0.05);
   }
 
@@ -217,6 +268,11 @@ export class Sfx {
     env.gain.exponentialRampToValueAtTime(0.0001, t + length);
     osc.connect(env);
     env.connect(out);
+    this._holdBus(out);
+    osc.addEventListener('ended', () => {
+      osc.disconnect(); env.disconnect();
+      this._releaseBus(out);
+    }, { once: true });
     osc.start(t);
     osc.stop(t + length + 0.05);
   }
@@ -276,11 +332,12 @@ export class Sfx {
       this.knife(distance, pan);
       return;
     }
-    const sample = SHOT_SAMPLES[kind] || 'rifle-shot';
-    if (this.playSample(sample, sound.gain * 0.32, distance, pan)) {
-      if (distance < 6 && sound.mech && sound.mech !== 'none') {
-        this._mech(this._bus(0.16, { distance, pan, wet: 0.03 }), sound.mech, 0.04);
-      }
+    const sample = SHOT_SAMPLES[kind] || 'shot-rifle';
+    // Limit each clip to one report so a single trigger press cannot replay a burst.
+    const shotLength = kind.includes('shotgun') ? 0.48
+      : ['sniper', 'heavy_sniper', 'magnum', 'heavy_pistol'].includes(kind) ? 0.4
+        : 0.3;
+    if (this.playSample(sample, sound.gain * 0.58, distance, pan, shotLength, 1, 0.06)) {
       return;
     }
     const out = this._bus(sound.gain * (0.92 + Math.random() * 0.16), { distance, pan, wet: sound.quiet ? 0.05 : 0.22 });
@@ -344,18 +401,70 @@ export class Sfx {
   // ---------- Шаги и движение ----------
   step(distance, pan, loud = 1) {
     if (!this.ctx || distance > 26) return;
-    if (this.playSample('footstep', 0.32 * loud, distance, pan)) return;
-    const out = this._bus(0.32 * loud, { distance, pan, wet: 0.05 });
+    // Use the supplied, natural footstep recording, but crop its trailing
+    // voice/noise. Slight pitch variation keeps repeated steps from sounding identical.
+    const proximity = Math.max(0.08, (1 + distance / 8) ** -1.45);
+    const gain = 0.78 * loud * proximity;
+    if (this.playSample('footstep', gain, distance, pan, 0.3, 0.94 + Math.random() * 0.12, 0.035)) return;
+    const out = this._bus(0.58 * loud * proximity, { distance, pan, wet: 0.03 });
     const vary = 0.85 + Math.random() * 0.3;
     // Пятка и подошва
     this._noise(out, { type: 'lowpass', freq: 380 * vary, length: 0.06, gain: 1 });
     this._noise(out, { freq: 2200 * vary, q: 1.2, length: 0.05, gain: 0.35, delay: 0.025 });
   }
 
-  defuse() {
+  defuse(distance = 0, pan = 0) {
     if (!this.ctx) return;
-    if (this.playSample('bomb-defuse', 0.8, 0, 0)) return;
+    if (this.playSample('bomb-defuse', 0.8, distance, pan, Infinity, 1, 0.05)) return;
     this.beep(true);
+  }
+
+  plant(distance = 0, pan = 0) {
+    if (!this.ctx) return;
+    const out = this._bus(0.48, { distance, pan, wet: 0.04 });
+    this._noise(out, { type: 'highpass', freq: 2400, length: 0.045, gain: 0.5 });
+    this._noise(out, { type: 'lowpass', freq: 620, length: 0.16, gain: 0.55, sweepTo: 180 });
+    this._tone(out, { from: 760, to: 1180, length: 0.2, gain: 0.24, type: 'triangle', delay: 0.08 });
+  }
+
+  startBombAction(id, kind, distance = 0, pan = 0) {
+    const active = this.actions.get(id);
+    if (active?.kind === kind) return;
+    this.stopBombAction(id);
+    if (!this.ctx) return;
+    if (kind === 1) {
+      this.plant(distance, pan);
+      this.actions.set(id, { kind, source: null });
+      return;
+    }
+    if (kind !== 2) return;
+
+    const buffer = this.samples?.['bomb-defuse'];
+    if (!buffer) {
+      this.beep(true);
+      this.actions.set(id, { kind, source: null });
+      return;
+    }
+    const source = this.ctx.createBufferSource();
+    const bus = this._bus(0.8, { distance, pan, wet: 0.05 });
+    source.buffer = buffer;
+    source.connect(bus);
+    this._holdBus(bus);
+    source.addEventListener('ended', () => {
+      source.disconnect();
+      this._releaseBus(bus);
+      const current = this.actions.get(id);
+      if (current?.source === source) current.source = null;
+    }, { once: true });
+    this.actions.set(id, { kind, source });
+    source.start();
+  }
+
+  stopBombAction(id) {
+    const active = this.actions.get(id);
+    this.actions.delete(id);
+    if (!active?.source) return;
+    try { active.source.stop(); } catch { /* sample already ended */ }
   }
 
   land() {
