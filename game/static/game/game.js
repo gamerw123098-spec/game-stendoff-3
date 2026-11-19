@@ -82,6 +82,7 @@ const state = {
   latest: null,
   bomb: null, // [состояние: 0 у игрока, 1 на земле, 2 заложена; x; y; z; id носителя; точка]
   attackers: 0,
+  mapMarks: [],
   hostId: null,
   results: null,
   showResults: false,
@@ -312,6 +313,7 @@ function handle(msg) {
     case 'boom': onBoom(msg); break;
     case 'bomb': onBombEvent(msg); break;
     case 'spray': onSpray(msg.row); break;
+    case 'mark': addMapMark(msg); break;
     case 'throw':
       if (msg.id !== state.myId) {
         const thrower = state.remotes.get(msg.id);
@@ -401,7 +403,9 @@ function applyModeUi() {
   document.querySelector('.board-cols').classList.toggle('single', ffa);
   $('goal').textContent = `до ${msg.target}`;
   $('wallet').hidden = !msg.flags.shop;
-  $('map-note').textContent = `${msg.modeName} · ${msg.world.name}`;
+  $('map-note').textContent = TOUCH ? 'Нажмите карту — опасность' : 'P: курсор · клик по карте';
+  $('map-note').title = `${msg.modeName} · ${msg.world.name}. Синие/оранжевые — союзники, красные — враги.`;
+  $('radar').title = 'Синие/оранжевые — союзники, красные — враги. Нажмите на карту, чтобы отметить опасность для команды.';
   touchControls?.setMode(msg.flags.shop, msg.mode === 'defuse');
   $('shop-cols').replaceChildren();
   buildShop();
@@ -1001,11 +1005,32 @@ let nextRadar = 0;
 
 function buildRadar(world) {
   const canvas = $('radar');
+  canvas.style.pointerEvents = 'auto';
+  canvas.setAttribute('role', 'button');
+  canvas.setAttribute('aria-label', 'Мини-карта: нажмите, чтобы отметить опасность для команды');
+  if (!canvas.dataset.markHandler) {
+    canvas.dataset.markHandler = '1';
+    canvas.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!state.connected || !me.alive || state.welcome.flags.ffa) return;
+      const rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const x = ((event.clientX - rect.left) / rect.width) * world.halfX * 2 - world.halfX;
+      const z = ((event.clientY - rect.top) / rect.height) * world.halfZ * 2 - world.halfZ;
+      send({ t: 'mark', x, z, kind: 'danger' });
+    });
+  }
   radarScale = RADAR_WIDTH / (world.halfX * 2);
   canvas.width = RADAR_WIDTH;
   canvas.height = Math.round(world.halfZ * 2 * radarScale);
   // Название режима и код игры стоят под мини-картой и не наезжают на табло счёта.
   $('hud').style.setProperty('--radar-bottom', `${32 + canvas.height}px`);
+  requestAnimationFrame(() => {
+    const hud = $('hud').getBoundingClientRect();
+    const rect = canvas.getBoundingClientRect();
+    $('hud').style.setProperty('--radar-bottom', `${rect.bottom - hud.top}px`);
+  });
   radarBase = document.createElement('canvas');
   radarBase.width = canvas.width;
   radarBase.height = canvas.height;
@@ -1047,6 +1072,25 @@ function radarDot(ctx, x, z, color, size = 3) {
   ctx.fill();
 }
 
+function addMapMark(msg) {
+  if (msg.kind !== 'danger' || !Number.isFinite(msg.x) || !Number.isFinite(msg.z)) return;
+  state.mapMarks.push({ x: msg.x, z: msg.z, expires: performance.now() / 1000 + Math.min(12, Math.max(1, msg.ttl || 9)) });
+}
+
+function radarEnemy(ctx, x, z) {
+  ctx.fillStyle = '#ff5265';
+  ctx.strokeStyle = 'rgba(15, 18, 22, .9)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(radarX(x), radarZ(z) - 4);
+  ctx.lineTo(radarX(x) + 4, radarZ(z));
+  ctx.lineTo(radarX(x), radarZ(z) + 4);
+  ctx.lineTo(radarX(x) - 4, radarZ(z));
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+}
+
 function renderRadar(nowSec) {
   if (nowSec < nextRadar || !radarBase) return;
   nextRadar = nowSec + 0.1;
@@ -1054,12 +1098,30 @@ function renderRadar(nowSec) {
   ctx.clearRect(0, 0, radarBase.width, radarBase.height);
   ctx.drawImage(radarBase, 0, 0);
 
-  // Враги на мини-карту не попадают: их надо искать глазами.
-  if (!state.welcome.flags.ffa) {
-    for (const [id, remote] of state.remotes) {
-      if (id === state.myId || !remote.alive || remote.team !== me.team) continue;
-      radarDot(ctx, remote.view.x, remote.view.z, me.team === 0 ? '#f0a64a' : '#6cb2ff');
-    }
+  for (const [id, remote] of state.remotes) {
+    if (id === state.myId || !remote.alive) continue;
+    const ally = !state.welcome.flags.ffa && remote.team === me.team;
+    if (ally) radarDot(ctx, remote.view.x, remote.view.z, me.team === 0 ? '#f0a64a' : '#6cb2ff', 3.5);
+    else radarEnemy(ctx, remote.view.x, remote.view.z);
+  }
+  const now = performance.now() / 1000;
+  state.mapMarks = state.mapMarks.filter((mark) => mark.expires > now);
+  for (const mark of state.mapMarks) {
+    const x = radarX(mark.x);
+    const z = radarZ(mark.z);
+    const pulse = 1 + (Math.sin(now * 5) + 1) * 0.5;
+    ctx.strokeStyle = 'rgba(255, 77, 64, .85)';
+    ctx.fillStyle = 'rgba(255, 77, 64, .2)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(x, z, 6 + pulse, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#ff6257';
+    ctx.font = 'bold 9px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('!', x, z + 0.5);
   }
   const bomb = state.bomb;
   if (bomb && (me.team === state.attackers || bomb[0] === 2)) {

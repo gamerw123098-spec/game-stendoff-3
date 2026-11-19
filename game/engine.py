@@ -1275,6 +1275,22 @@ class Room:
         return True
 
     # ---------- Сообщения клиента ----------
+    def map_mark(self, p: Player, msg: dict, now: float) -> bool:
+        """Broadcast a short-lived danger marker only to the sender's team."""
+        if p.is_bot or not p.alive or self.phase != "live" or self.cfg["ffa"]:
+            return False
+        x, z = _num(msg.get("x")), _num(msg.get("z"))
+        if x is None or z is None or abs(x) > self.map.half_x or abs(z) > self.map.half_z:
+            return False
+        if now - p.ai.get("map_mark_at", -1e9) < 1.25:
+            return False
+        p.ai["map_mark_at"] = now
+        message = {"t": "mark", "id": p.id, "x": round(x, 2), "z": round(z, 2), "kind": "danger", "ttl": 9}
+        for recipient in self.players.values():
+            if recipient.team == p.team and recipient.channel:
+                self._emit(message, recipient.channel)
+        return True
+
     def handle(self, pid: int, msg: dict, now: float):
         p = self.players.get(pid)
         if p is None:
@@ -1298,6 +1314,8 @@ class Room:
             self.start_reload(p, now)
         elif kind == "spray":
             self.spray(p, msg, now)
+        elif kind == "mark":
+            self.map_mark(p, msg, now)
         elif kind == "weapon":
             self.switch_weapon(p, msg.get("w"), now)
         elif kind == "buy":

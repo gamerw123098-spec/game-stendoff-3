@@ -387,9 +387,9 @@ body.game { overflow: hidden; background: #0a0d10; user-select: none; }
 /* ---------- Гранаты, бомба, мини-карта ---------- */
 #flashbang { position: absolute; inset: 0; background: #fff; opacity: 0; }
 #smoke-veil { position: absolute; inset: 0; background: rgba(196, 201, 206, .94); }
-#radar { position: absolute; left: 16px; top: 32px; border: 1px solid rgba(255, 255, 255, .22); }
-#map-note { position: absolute; left: 16px; top: calc(var(--radar-bottom, 140px) + 6px); font-size: 12px; color: #b9c4cf; }
-#room-code { position: absolute; left: 16px; top: calc(var(--radar-bottom, 140px) + 24px); color: var(--accent); font: 700 15px var(--mono); letter-spacing: .04em; }
+#radar { position: absolute; left: 16px; top: 32px; border: 1px solid rgba(255, 255, 255, .22); cursor: crosshair; }
+#map-note { position: absolute; left: 16px; top: calc(var(--radar-bottom, 140px) + 6px); max-width: 184px; font-size: 11px; line-height: 1.25; color: #b9c4cf; }
+#room-code { position: absolute; left: 16px; top: calc(var(--radar-bottom, 140px) + 40px); color: var(--accent); font: 700 15px var(--mono); letter-spacing: .04em; }
 #objective {
   position: absolute;
   top: 80px;
@@ -619,7 +619,8 @@ body.touch input, body.touch select { font-size: 16px; }
 #touch-tools .touch-btn, #touch-system .touch-btn { position: static; --size: 44px; font-size: 9px; }
 
 body.touch #radar { left: calc(6px + env(safe-area-inset-left)); top: 6px; width: 104px; height: auto; }
-body.touch #map-note, body.touch #team-badge, body.touch #weapon-name { display: none; }
+body.touch #team-badge, body.touch #weapon-name { display: none; }
+body.touch #map-note { display: block; left: calc(6px + env(safe-area-inset-left)); max-width: 112px; font-size: 9px; }
 body.touch #netinfo { left: 50%; top: auto; bottom: 10px; transform: translateX(-50%); white-space: nowrap; padding: 4px 7px; border-radius: 5px; background: rgba(10, 14, 18, .65); }
 body.touch #chat-panel { left: calc(6px + env(safe-area-inset-left)); bottom: 154px; width: min(330px, calc(100vw - 18px)); max-height: 24vh; font-size: 11px; }
 body.touch #chat-log { max-height: 20vh; }

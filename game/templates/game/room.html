@@ -6,7 +6,7 @@
   <title>ПОЛИГОН · {{ code }}</title>
   <link rel="icon" href="{% static 'game/icon.svg' %}" type="image/svg+xml">
   <link rel="stylesheet" href="{% static 'game/site.css' %}">
-  <link rel="stylesheet" href="{% static 'game/game.css' %}">
+  <link rel="stylesheet" href="{% static 'game/game.css' %}?v=mapmark1">
   <link rel="stylesheet" href="{% static 'game/device.css' %}">
   <script type="importmap">{"imports": {"three": "{% static 'game/vendor/three.module.min.js' %}"}}</script>
 </head>
@@ -22,7 +22,7 @@
     <div id="damage-arcs" aria-hidden="true"></div>
     <div id="smoke-veil" aria-hidden="true" hidden></div>
     <div id="flashbang" aria-hidden="true"></div>
-    <canvas id="radar" aria-hidden="true"></canvas>
+    <canvas id="radar" aria-label="Мини-карта: нажмите, чтобы отметить опасность для команды"></canvas>
     <div id="map-note"></div>
     <div id="objective" hidden></div>
     <div id="act-bar" hidden><span id="act-text"></span><div class="bar"><i id="act-fill"></i></div></div>
@@ -299,6 +299,6 @@
     <button id="touch-layout-save" class="primary" type="button">Готово</button>
   </div>
   {{ config|json_script:"room-config" }}
-  <script type="module" src="{% static 'game/game.js' %}?v=soundfix5"></script>
+  <script type="module" src="{% static 'game/game.js' %}?v=mapmark1"></script>
 </body>
 </html>
