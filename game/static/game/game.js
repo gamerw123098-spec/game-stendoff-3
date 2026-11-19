@@ -2470,7 +2470,8 @@ function frame(nowMs) {
 
 // ---------- Формы и меню ----------
 const nickInput = $('nick');
-nickInput.value = load('nick', '');
+nickInput.value = config.nick || load('nick', '');
+if (config.nick) save('nick', config.nick);
 
 async function joinGame() {
   sfx.unlock();
@@ -2500,7 +2501,7 @@ function readAutoJoin() {
   }
 }
 const autoJoin = readAutoJoin();
-if ((autoJoin === config.code || autoJoin === '*') && nickInput.value.trim()) joinGame();
+if ((autoJoin === config.code || autoJoin === '*' || config.nick) && nickInput.value.trim()) joinGame();
 
 $('res-again').addEventListener('click', () => { sfx.click(); send({ t: 'start' }); });
 $('res-lobby').addEventListener('click', () => { sfx.click(); send({ t: 'lobby' }); });

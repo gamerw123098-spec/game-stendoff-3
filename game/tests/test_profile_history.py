@@ -3,11 +3,24 @@
 from django.test import Client
 
 from game import profiles
+from game import rooms
 from game.engine import Room
 from game.models import CaseReward, MatchRecord, Profile
 
 
 class DurableHistoryTests(TestCase):
+    def test_create_room_carries_nickname_into_room_page(self):
+        response = self.client.post("/create/", {
+            "nick": "TestPlayer", "mode": "tdm", "map": "depot", "target": "30",
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("nick=TestPlayer", response["Location"])
+        code = response["Location"].split("/")[-2]
+        room_page = self.client.get(response["Location"])
+        self.assertEqual(room_page.status_code, 200)
+        self.assertContains(room_page, '"nick": "TestPlayer"')
+        rooms.ROOMS.pop(code, None)
+
     def test_lobby_shows_persisted_settings_and_profile_history_surfaces(self):
         response = Client().get("/")
         self.assertEqual(response.status_code, 200)

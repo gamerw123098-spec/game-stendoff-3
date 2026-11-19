@@ -80,7 +80,7 @@ $('join-form').addEventListener('submit', (event) => {
   remember('nick', nickInput.value.trim());
   // Страница игры увидит отметку и войдёт сама, без второго вопроса про ник.
   remember('poligon.autojoin', code);
-  location.href = `/room/${encodeURIComponent(code)}/`;
+  location.href = `/room/${encodeURIComponent(code)}/?nick=${encodeURIComponent(nickInput.value.trim())}`;
 });
 
 if (!location.hash || location.hash === '#play') {
@@ -116,6 +116,15 @@ $('create-form').addEventListener('submit', (event) => {
   }
   remember('nick', nickInput.value.trim());
   remember('poligon.autojoin', '*');
+  let createNick = $('create-nick');
+  if (!createNick) {
+    createNick = document.createElement('input');
+    createNick.type = 'hidden';
+    createNick.name = 'nick';
+    createNick.id = 'create-nick';
+    event.currentTarget.append(createNick);
+  }
+  createNick.value = nickInput.value.trim();
 });
 nickInput.addEventListener('input', () => nickInput.setCustomValidity(''));
 

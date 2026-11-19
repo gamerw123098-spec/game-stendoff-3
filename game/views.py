@@ -78,7 +78,9 @@ async def create(request):
     except ValueError:
         target = None
     room_obj = rooms.create_room(mode, target, request.POST.get("map", "depot"))
-    return redirect("room", code=room_obj.code)
+    nick = request.POST.get("nick", "").strip()[:16]
+    room_url = reverse("room", kwargs={"code": room_obj.code})
+    return redirect(f"{room_url}?{urlencode({'nick': nick})}" if nick else room_url)
 
 
 @require_GET
@@ -89,6 +91,7 @@ async def room(request, code):
     room_obj = handle.room
     return render(request, "game/room.html", {
         "code": room_obj.code,
+        "nick": request.GET.get("nick", "")[:16],
         "mode_name": room_obj.cfg["name"],
         "map_name": room_obj.map.name,
         "has_teams": not room_obj.cfg["ffa"],
@@ -96,6 +99,7 @@ async def room(request, code):
         "is_defuse": room_obj.mode == "defuse",
         "config": {
             "code": room_obj.code,
+            "nick": request.GET.get("nick", "")[:16],
             "base": _base_url(request),
             "share": f"{_base_url(request)}/room/{room_obj.code}/",
         },
