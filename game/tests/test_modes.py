@@ -504,3 +504,39 @@ class BotStepTests(SimpleTestCase):
         for _ in range(40):
             bots._step(self.room, self.bot, 1.0, 0.0, 3.9, 0.05)
         self.assertLess(self.bot.x, self.wall.minx)
+
+
+class MapMarkTests(SimpleTestCase):
+    def setUp(self):
+        self.room = Room("MARK", "tdm", 30, now=0.0)
+        self.sender = self.room.add_player("Sender", 0, "sender", 0.0)
+        self.ally = self.room.add_player("Ally", 0, "ally", 0.0)
+        self.enemy = self.room.add_player("Enemy", 1, "enemy", 0.0)
+        self.room.phase = "live"
+        for player in (self.sender, self.ally, self.enemy):
+            player.alive = True
+        self.room.drain()
+
+    def test_danger_mark_is_broadcast_to_sender_team_only(self):
+        self.room.handle(self.sender.id, {"t": "mark", "x": 4.25, "z": -3.5}, 1.0)
+        marks = [(channel, msg) for channel, msg in self.room.drain() if msg.get("t") == "mark"]
+        self.assertEqual({channel for channel, _ in marks}, {"sender", "ally"})
+        self.assertTrue(all(msg["kind"] == "danger" and msg["ttl"] == 9 for _, msg in marks))
+        self.assertTrue(all(msg["x"] == 4.25 and msg["z"] == -3.5 for _, msg in marks))
+
+    def test_danger_mark_rejects_out_of_map_and_rate_limited_requests(self):
+        self.room.handle(self.sender.id, {"t": "mark", "x": self.room.map.half_x + 1, "z": 0}, 1.0)
+        self.assertFalse(any(msg.get("t") == "mark" for _, msg in self.room.drain()))
+        self.room.handle(self.sender.id, {"t": "mark", "x": 1, "z": 1}, 2.0)
+        self.room.drain()
+        self.room.handle(self.sender.id, {"t": "mark", "x": 2, "z": 2}, 2.5)
+        self.assertFalse(any(msg.get("t") == "mark" for _, msg in self.room.drain()))
+
+    def test_free_for_all_does_not_broadcast_team_marks(self):
+        room = Room("FFA", "ffa", None, now=0.0)
+        player = room.add_player("Player", 0, "player", 0.0)
+        player.alive = True
+        room.phase = "live"
+        room.drain()
+        room.handle(player.id, {"t": "mark", "x": 0, "z": 0}, 1.0)
+        self.assertFalse(any(msg.get("t") == "mark" for _, msg in room.drain()))
