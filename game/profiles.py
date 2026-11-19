@@ -33,7 +33,7 @@ def create_profile() -> Profile:
     while True:
         code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(10))
         if not Profile.objects.filter(code=code).exists():
-            return Profile.objects.create(code=code, sprays=["smile"])
+            return Profile.objects.create(code=code, cases=0, sprays=["smile"])
 
 
 def get_profile(code) -> Profile | None:
@@ -235,11 +235,14 @@ def for_game(code, nick=None) -> tuple[int, dict] | None:
 
 
 def grant_wins(profile_ids: list[int]) -> None:
-    """Награды за победу: бесплатный кейс, кредиты и немного золота."""
-    Profile.objects.filter(id__in=profile_ids).update(
-        cases=F("cases") + 1, wins=F("wins") + 1,
-        credits=F("credits") + 100, gold=F("gold") + 25,
+    """Award win currency plus a 20% chance of a free case."""
+    winners = set(profile_ids)
+    Profile.objects.filter(id__in=winners).update(
+        wins=F("wins") + 1, credits=F("credits") + 100, gold=F("gold") + 25,
     )
+    lucky_winners = [profile_id for profile_id in winners if _rng.random() < 0.2]
+    if lucky_winners:
+        Profile.objects.filter(id__in=lucky_winners).update(cases=F("cases") + 1)
 
 
 def record_matches(rows: list[dict]) -> None:

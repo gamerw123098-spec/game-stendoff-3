@@ -179,15 +179,16 @@ class ProfileApiTests(TestCase):
         self.assertEqual(response.status_code, status, response.content)
         return response.json()
 
-    def test_new_profile_has_free_case_and_can_be_restored_by_code(self):
+    def test_new_profile_has_no_free_case_and_can_be_restored_by_code(self):
         created = self.post("/api/profile/", {})
-        self.assertEqual(created["cases"], 1)
+        self.assertEqual(created["cases"], 0)
         again = self.post("/api/profile/", {"code": created["code"].lower()})
         self.assertEqual(again["code"], created["code"])
         self.post("/api/profile/", {"code": "NOSUCHCODE"}, status=404)
 
     def test_open_case_spends_it_and_gives_skin(self):
         code = self.post("/api/profile/", {})["code"]
+        Profile.objects.filter(code=code).update(cases=1)
         opened = self.post("/api/case/open/", {"code": code})
         self.assertIn(opened["skin"], skins.SKINS)
         self.assertEqual(opened["profile"]["cases"], 0)
@@ -229,6 +230,17 @@ class ProfileApiTests(TestCase):
         self.assertIn("gg", opened["profile"]["sprays"])
         self.assertEqual(opened["profile"]["standardCases"], 0)
         self.post("/api/case/open/", {"code": code, "type": "standard"}, status=409)
+
+    def test_win_reward_has_exactly_twenty_percent_case_threshold(self):
+        profile = Profile.objects.create(code="CHANCE0001", cases=0)
+        with patch("game.profiles._rng.random", return_value=0.199):
+            profiles.grant_wins([profile.pk])
+        profile.refresh_from_db()
+        self.assertEqual((profile.cases, profile.wins), (1, 1))
+        with patch("game.profiles._rng.random", return_value=0.2):
+            profiles.grant_wins([profile.pk])
+        profile.refresh_from_db()
+        self.assertEqual((profile.cases, profile.wins), (1, 2))
 
     def test_gold_shop_buys_skin_and_premium_case(self):
         created = self.post("/api/profile/", {})
@@ -288,7 +300,8 @@ class GameProfileTests(TransactionTestCase):
                 return msg
         self.fail(f"Сообщение {kind} не пришло")
 
-    async def test_skins_are_sent_and_win_grants_case(self):
+    @patch("game.profiles._rng.random", return_value=0.1)
+    async def test_skins_are_sent_and_win_can_grant_case(self, mock_random):
         from channels.db import database_sync_to_async as db
 
         profile = await db(profiles.create_profile)()

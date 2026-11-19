@@ -6,7 +6,7 @@ class Profile(models.Model):
 
     code = models.CharField(max_length=10, unique=True)
     nick = models.CharField(max_length=16, blank=True)
-    cases = models.PositiveIntegerField(default=1)  # первый кейс в подарок
+    cases = models.PositiveIntegerField(default=0)
     credits = models.PositiveIntegerField(default=100)
     gold = models.PositiveIntegerField(default=0)
     standard_cases = models.PositiveIntegerField(default=0)
