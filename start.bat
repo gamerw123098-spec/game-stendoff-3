@@ -15,7 +15,7 @@ echo  ПОЛИГОН запущен. Не закрывайте это окно.
 echo  На этом компьютере откройте:  http://localhost:8000
 echo  Адрес для друзей будет показан на главной странице сайта.
 echo.
-".venv\Scripts\python.exe" manage.py runserver 0.0.0.0:8000 --noreload --nostatic
+".venv\Scripts\python.exe" manage.py runserver 0.0.0.0:8000 --noreload
 pause
 exit /b
 
